@@ -1,0 +1,32 @@
+{
+  "input": "blog.example.org",
+  "requestedUrl": "https://blog.example.org/",
+  "finalUrl": "https://blog.example.org/",
+  "status": 200,
+  "redirects": [],
+  "headers": {
+    "server": "Apache",
+    "x-powered-by": "PHP/8.2.12",
+    "content-type": "text/html; charset=UTF-8",
+    "link": "<https://blog.example.org/wp-json/>; rel=\"https://api.w.org/\", <https://blog.example.org/wp-json/wp/v2/pages/2>; rel=\"alternate\"; type=\"application/json\", <https://blog.example.org/>; rel=shortlink",
+    "x-frame-options": "SAMEORIGIN",
+    "x-content-type-options": "nosniff",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
+    "content-security-policy": "upgrade-insecure-requests; default-src 'self' https:; script-src 'self' 'unsafe-inline' https://stats.wp.com"
+  },
+  "setCookies": [
+    "wordpress_test_cookie=WP%20Cookie%20check; path=/; secure",
+    "wp_lang=en_US; path=/"
+  ],
+  "httpProbe": { "result": "redirects-to-https", "status": 301, "location": "https://blog.example.org/" },
+  "tls": {
+    "valid": true,
+    "error": null,
+    "validTo": "2026-12-12T23:59:59.000Z",
+    "daysLeft": 51,
+    "issuer": "Sectigo Limited",
+    "protocol": "TLSv1.3"
+  },
+  "timingMs": 540,
+  "scannedAt": "2026-10-22T15:20:00.000Z"
+}

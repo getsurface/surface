@@ -1,0 +1,21 @@
+{
+  "input": "old-shop.example.com",
+  "requestedUrl": "https://old-shop.example.com/",
+  "finalUrl": "http://old-shop.example.com/",
+  "status": 200,
+  "redirects": [],
+  "headers": {
+    "server": "Apache/2.4.29 (Ubuntu)",
+    "content-type": "text/html; charset=UTF-8",
+    "vary": "Accept-Encoding",
+    "x-frame-options": "SAMEORIGIN"
+  },
+  "setCookies": [
+    "shop_sid=4d5e6f7a8b9c; path=/; HttpOnly",
+    "currency=EUR; path=/"
+  ],
+  "httpProbe": null,
+  "tls": null,
+  "timingMs": 388,
+  "scannedAt": "2026-10-22T15:20:00.000Z"
+}

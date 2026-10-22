@@ -1,0 +1,34 @@
+{
+  "input": "cdn.example.com",
+  "requestedUrl": "https://cdn.example.com/",
+  "finalUrl": "https://cdn.example.com/",
+  "status": 200,
+  "redirects": [],
+  "headers": {
+    "server": "cloudflare",
+    "cf-ray": "8d2f6a1b3c4e5f60-AMS",
+    "cf-cache-status": "HIT",
+    "age": "1834",
+    "content-type": "text/html; charset=utf-8",
+    "access-control-allow-origin": "*",
+    "strict-transport-security": "max-age=2592000",
+    "x-content-type-options": "nosniff",
+    "referrer-policy": "strict-origin-when-cross-origin",
+    "alt-svc": "h3=\":443\"; ma=86400",
+    "nel": "{\"success_fraction\":0,\"report_to\":\"cf-nel\",\"max_age\":604800}"
+  },
+  "setCookies": [
+    "__cf_bm=Qm9vLmJhci5iYXouMTIzNDU2; path=/; expires=Thu, 22-Oct-26 15:50:00 GMT; domain=.cdn.example.com; HttpOnly; Secure; SameSite=None"
+  ],
+  "httpProbe": { "result": "redirects-to-https", "status": 301, "location": "https://cdn.example.com/" },
+  "tls": {
+    "valid": true,
+    "error": null,
+    "validTo": "2026-12-24T23:59:59.000Z",
+    "daysLeft": 63,
+    "issuer": "Google Trust Services",
+    "protocol": "TLSv1.3"
+  },
+  "timingMs": 96,
+  "scannedAt": "2026-10-22T15:20:00.000Z"
+}

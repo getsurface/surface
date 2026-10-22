@@ -1,0 +1,14 @@
+{
+  "name": "surface",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Passive website exposure checker: paste a URL, see what the server reveals.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "node server.js",
+    "test": "node --test"
+  }
+}

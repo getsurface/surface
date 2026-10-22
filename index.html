@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Surface — see what your site reveals</title>
+<meta name="description" content="Paste a URL and see what your website shows strangers: server software, exposed versions, missing security headers, cookie flags and certificate. Passive checks only. Free, no signup.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Surface">
+<meta property="og:title" content="Surface — see what your site reveals">
+<meta property="og:description" content="Paste a URL and see what your website shows strangers: server software, exposed versions, missing security headers and more. Passive checks only.">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Surface — see what your site reveals">
+<meta name="twitter:description" content="Paste a URL and see what your website shows strangers: server software, exposed versions, missing security headers and more. Passive checks only.">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231d1d1f'/%3E%3Cg fill='none' stroke='%23ffffff' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round' transform='translate(6.5 6.5) scale(0.79)'%3E%3Cpath d='M12 2a10 10 0 0 0-3.16 19.49'/%3E%3Cpath d='M12 2a10 10 0 0 1 9.54 7'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3Cpath d='m16 16 4 4'/%3E%3C/g%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&amp;family=Inter:wght@400;500;600&amp;display=swap">
+<link rel="stylesheet" href="/assets/app.css">
+<script src="/assets/app.js" defer></script>
+</head>
+<body>
+
+<a class="skip-link" href="#scan-form" data-action="focus-scan">Skip to the checker</a>
+
+<nav aria-label="Main">
+  <div class="wrap nav-inner">
+    <a class="brand" href="./">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+          <path d="M12 2a10 10 0 0 0-3.16 19.49"></path><path d="M12 2a10 10 0 0 1 9.54 7"></path><circle cx="12" cy="12" r="3"></circle><path d="m16 16 4 4"></path>
+        </svg>
+      </span>
+      Surface
+    </a>
+    <div class="nav-links">
+      <a href="#how">How it works</a>
+      <a href="#report">What we check</a>
+      <a href="#faq">FAQ</a>
+    </div>
+    <div class="nav-right">
+      <a class="btn btn-ghost" href="#faq">Help</a>
+      <button type="button" class="btn btn-dark" data-action="focus-scan">Scan a site</button>
+    </div>
+  </div>
+</nav>
+
+<main id="main">
+
+<section class="hero" aria-labelledby="hero-title">
+  <div class="wrap">
+    <div class="pills">
+      <span class="pill"><span class="pill-ic ic-green" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><rect x="2" y="3" width="20" height="8" rx="2"></rect><rect x="2" y="13" width="20" height="8" rx="2"></rect><path d="M6 7h.01M6 17h.01"></path></svg></span>Server headers</span>
+      <span class="pill"><span class="pill-ic ic-orange" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M12 2 2 7l10 5 10-5-10-5Z"></path><path d="m2 17 10 5 10-5"></path><path d="m2 12 10 5 10-5"></path></svg></span>Exposed versions</span>
+      <span class="pill"><span class="pill-ic ic-violet" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg></span>Cookies and certificate</span>
+    </div>
+    <h1 id="hero-title">See what your site reveals to strangers</h1>
+    <p class="sub">Paste a URL and get the same first look an attacker gets: the software you run, its versions, and the doors left open. Free, no signup.</p>
+
+    <form id="scan-form" class="scan-form" action="/" method="get" novalidate>
+      <div class="scanbox">
+        <label class="scan-field" id="scan-field">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+          <input id="scan-input" name="url" type="text" inputmode="url" autocomplete="url" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="2048" placeholder="yourdomain.com" aria-label="Website address">
+        </label>
+        <button type="submit" id="scan-submit" class="btn-scan"><span class="spinner" aria-hidden="true"></span><span class="btn-label" id="scan-submit-label">Check my site</span></button>
+      </div>
+      <label class="agree" id="scan-agree">
+        <input type="checkbox" id="scan-consent" name="consent" required>
+        <span>I own this site or have permission to check it.</span>
+      </label>
+    </form>
+    <div id="scan-alert"></div>
+    <p id="scan-status" class="sr-only" role="status" aria-live="polite"></p>
+    <div class="consent">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+      Read-only. We only look at what your server already sends back.
+    </div>
+    <noscript><p class="noscript">Surface needs JavaScript to run a check.</p></noscript>
+  </div>
+</section>
+
+<section class="report" id="report" aria-labelledby="report-title" aria-busy="false">
+  <div class="wrap">
+    <div class="report-head">
+      <div class="report-id">
+        <h2 class="report-target" id="report-title" tabindex="-1">
+          <span class="fav" id="report-fav" aria-hidden="true">◆</span>
+          <span class="sr-only" id="report-title-prefix">Exposure report for </span>
+          <span class="report-url" id="report-url"></span>
+          <span class="chip-example" id="report-example" hidden>Example</span>
+        </h2>
+        <div class="report-meta">
+          <span class="chip" id="report-http" hidden></span>
+          <span id="report-when" hidden></span>
+          <span id="report-example-note" hidden>This is an example report. Run a check to see yours.</span>
+        </div>
+      </div>
+      <span class="grade" id="report-level">
+        <span class="dot" aria-hidden="true"></span>
+        <span id="report-level-text">Exposure</span>
+      </span>
+    </div>
+
+    <div class="meter-card">
+      <div class="meter-top">
+        <span class="meter-label" id="meter-label">Exposure score</span>
+        <span class="meter-num" id="meter-num"><span id="meter-score">0</span><span class="meter-den">/100</span></span>
+      </div>
+      <div class="meter-track" id="meter-track" role="meter" aria-labelledby="meter-label" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="meter-fill" id="meter-fill"></div></div>
+      <div class="meter-scale" aria-hidden="true"><span>Hardened</span><span>Wide open</span></div>
+    </div>
+
+    <div class="score-row">
+      <div class="stat">
+        <div class="stat-top">
+          <span class="stat-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M9 11H3v10h6V11Z"></path><path d="M15 3H9v18h6V3Z"></path><path d="M21 7h-6v14h6V7Z"></path></svg></span>
+          <div class="k">Checks run</div>
+        </div>
+        <div class="v" id="stat-total">0</div>
+      </div>
+      <div class="stat">
+        <div class="stat-top">
+          <span class="stat-ic ok" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M20 6 9 17l-5-5"></path></svg></span>
+          <div class="k">Looking good</div>
+        </div>
+        <div class="v ok" id="stat-ok">0</div>
+      </div>
+      <div class="stat">
+        <div class="stat-top">
+          <span class="stat-ic warn" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76Z"></path></svg></span>
+          <div class="k">Worth fixing</div>
+        </div>
+        <div class="v warn" id="stat-warn">0</div>
+      </div>
+      <div class="stat">
+        <div class="stat-top">
+          <span class="stat-ic crit" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg></span>
+          <div class="k">Urgent</div>
+        </div>
+        <div class="v crit" id="stat-crit">0</div>
+      </div>
+    </div>
+
+    <div class="seg" id="filter-bar" role="group" aria-label="Filter findings">
+      <button type="button" class="seg-btn active" data-filter="all" aria-pressed="true">All<span class="seg-n" data-count="all">0</span></button>
+      <button type="button" class="seg-btn" data-filter="crit" aria-pressed="false">Urgent<span class="seg-n" data-count="crit">0</span></button>
+      <button type="button" class="seg-btn" data-filter="warn" aria-pressed="false">To fix<span class="seg-n" data-count="warn">0</span></button>
+      <button type="button" class="seg-btn" data-filter="info" aria-pressed="false">Info<span class="seg-n" data-count="info">0</span></button>
+      <button type="button" class="seg-btn" data-filter="ok" aria-pressed="false">Good<span class="seg-n" data-count="ok">0</span></button>
+    </div>
+
+    <div class="findings">
+      <div class="f-head">
+        <h3 id="findings-title">What your server reveals</h3>
+        <span class="count" id="findings-count"></span>
+      </div>
+
+      <div id="findings-list" role="list" aria-labelledby="findings-title"></div>
+
+      <div id="findings-skeleton" aria-hidden="true" hidden>
+        <div class="f-skel"><span class="sk sk-pill"></span><span class="sk-lines"><span class="sk sk-line w-a"></span><span class="sk sk-line w-b"></span></span><span class="sk sk-val"></span></div>
+        <div class="f-skel"><span class="sk sk-pill"></span><span class="sk-lines"><span class="sk sk-line w-c"></span><span class="sk sk-line w-d"></span></span><span class="sk sk-val"></span></div>
+        <div class="f-skel"><span class="sk sk-pill"></span><span class="sk-lines"><span class="sk sk-line w-e"></span><span class="sk sk-line w-f"></span></span><span class="sk sk-val"></span></div>
+        <div class="f-skel"><span class="sk sk-pill"></span><span class="sk-lines"><span class="sk sk-line w-a"></span><span class="sk sk-line w-d"></span></span><span class="sk sk-val"></span></div>
+        <div class="f-skel"><span class="sk sk-pill"></span><span class="sk-lines"><span class="sk sk-line w-c"></span><span class="sk sk-line w-b"></span></span><span class="sk sk-val"></span></div>
+      </div>
+    </div>
+
+    <p class="note">Each finding comes with a plain-language fix. Select a row to see it.</p>
+  </div>
+</section>
+
+<section class="how" id="how" aria-labelledby="how-title">
+  <div class="wrap">
+    <h2 class="sec-title" id="how-title">How it works</h2>
+    <p class="sec-sub">No agent, no install, nothing touched on your server. We read only what it already hands out.</p>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num" aria-hidden="true">1</div>
+        <h3>Paste your URL</h3>
+        <p>Drop in any public address. We request your page the way a normal browser would.</p>
+      </div>
+      <div class="step">
+        <div class="step-num" aria-hidden="true">2</div>
+        <h3>We read the response</h3>
+        <p>We send a few ordinary requests: your page over HTTPS, a plain-HTTP check and the certificate handshake. Then we read the replies.</p>
+      </div>
+      <div class="step">
+        <div class="step-num" aria-hidden="true">3</div>
+        <h3>Get plain fixes</h3>
+        <p>Each finding comes with what it means and the one line to change. No jargon.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="faq" id="faq" aria-labelledby="faq-title">
+  <div class="wrap">
+    <h2 class="sec-title" id="faq-title">Common questions</h2>
+    <div class="acc">
+      <div class="acc-item" id="faq-affect">
+        <h3><button type="button" class="acc-q" id="faq-affect-q" aria-expanded="false" aria-controls="faq-affect-a">Will the check affect my site?<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"></path></svg></button></h3>
+        <div class="acc-a" id="faq-affect-a" role="region" aria-labelledby="faq-affect-q"><p>No. We send a few ordinary requests (your page over HTTPS, a plain-HTTP check and the certificate handshake) and read the replies, just like a visitor's browser. Nothing is changed, probed or stressed.</p></div>
+      </div>
+      <div class="acc-item" id="faq-safe">
+        <h3><button type="button" class="acc-q" id="faq-safe-q" aria-expanded="false" aria-controls="faq-safe-a">Does a clean result mean I'm safe?<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"></path></svg></button></h3>
+        <div class="acc-a" id="faq-safe-a" role="region" aria-labelledby="faq-safe-q"><p>It means the surface a stranger sees looks tidy. It can't see inside your code or your database, so treat a clean result as one good layer, not a full audit.</p></div>
+      </div>
+      <div class="acc-item" id="faq-data">
+        <h3><button type="button" class="acc-q" id="faq-data-q" aria-expanded="false" aria-controls="faq-data-a">What happens to my data?<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"></path></svg></button></h3>
+        <div class="acc-a" id="faq-data-a" role="region" aria-labelledby="faq-data-q"><p>We don't store reports. Each one is built when you ask and sent straight to your browser. Standard hosting logs may record the address you checked, so don't put secrets in it.</p></div>
+      </div>
+      <div class="acc-item" id="faq-free">
+        <h3><button type="button" class="acc-q" id="faq-free-q" aria-expanded="false" aria-controls="faq-free-a">Is it really free?<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"></path></svg></button></h3>
+        <div class="acc-a" id="faq-free-a" role="region" aria-labelledby="faq-free-q"><p>Yes. No signup, no card, no token. Paste a URL and read the report.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="cta-band" aria-labelledby="cta-title">
+  <div class="wrap cta-inner">
+    <h2 id="cta-title">See what you're showing the world</h2>
+    <p>One URL. A few seconds. A clear picture of what to close.</p>
+    <button type="button" class="btn-cta" data-action="focus-scan">Check my site</button>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap foot-inner">
+    <span>Surface — passive checks only. We never probe, stress or log in.</span>
+    <span><a href="#how">How it works</a> · <a href="#faq-data">Privacy</a></span>
+  </div>
+</footer>
+
+<template id="tpl-ic-crit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg></template>
+<template id="tpl-ic-warn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76Z"></path></svg></template>
+<template id="tpl-ic-info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg></template>
+<template id="tpl-ic-ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 6 9 17l-5-5"></path></svg></template>
+<template id="tpl-chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"></path></svg></template>
+<template id="tpl-ic-alert"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"></circle><path d="M12 8v4"></path><path d="M12 16h.01"></path></svg></template>
+
+</body>
+</html>

@@ -1,0 +1,27 @@
+{
+  "input": "expired.example.com",
+  "requestedUrl": "https://expired.example.com/",
+  "finalUrl": "https://expired.example.com/",
+  "status": 200,
+  "redirects": [],
+  "headers": {
+    "server": "nginx",
+    "content-type": "text/html",
+    "strict-transport-security": "max-age=31536000",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "SAMEORIGIN",
+    "referrer-policy": "no-referrer-when-downgrade"
+  },
+  "setCookies": [],
+  "httpProbe": { "result": "redirects-to-https", "status": 301, "location": "https://expired.example.com/" },
+  "tls": {
+    "valid": false,
+    "error": "CERT_HAS_EXPIRED",
+    "validTo": "2026-10-01T12:00:00.000Z",
+    "daysLeft": -22,
+    "issuer": "Let's Encrypt",
+    "protocol": "TLSv1.3"
+  },
+  "timingMs": 451,
+  "scannedAt": "2026-10-22T15:20:00.000Z"
+}

@@ -1,0 +1,36 @@
+{
+  "input": "portal.example.net",
+  "requestedUrl": "https://portal.example.net/",
+  "finalUrl": "https://portal.example.net/Account/Login",
+  "status": 200,
+  "redirects": [
+    { "from": "https://portal.example.net/", "to": "https://portal.example.net/Account/Login", "status": 302 }
+  ],
+  "headers": {
+    "server": "Microsoft-IIS/10.0",
+    "x-powered-by": "ASP.NET",
+    "x-aspnet-version": "4.0.30319",
+    "x-aspnetmvc-version": "5.2",
+    "x-azure-ref": "20261022T152000Z-17c9c8f6d4b5x8kqhC1AMSq3h400000004dg000000003v2m",
+    "x-backend-server": "ip-10-0-3-17.eu-west-1.compute.internal",
+    "access-control-allow-origin": "*",
+    "access-control-allow-credentials": "true",
+    "cache-control": "private",
+    "content-type": "text/html; charset=utf-8"
+  },
+  "setCookies": [
+    "ASP.NET_SessionId=xk2v1m3n4b5c6z7a8s9d0f1g; path=/; HttpOnly; SameSite=Lax",
+    "__RequestVerificationToken=Q2hlY2tUb2tlbg; path=/; HttpOnly"
+  ],
+  "httpProbe": { "result": "no-http", "status": null, "location": null },
+  "tls": {
+    "valid": true,
+    "error": null,
+    "validTo": "2026-10-31T23:59:59.000Z",
+    "daysLeft": 9,
+    "issuer": "DigiCert Inc",
+    "protocol": "TLSv1.2"
+  },
+  "timingMs": 1203,
+  "scannedAt": "2026-10-22T15:20:00.000Z"
+}

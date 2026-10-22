@@ -1,0 +1,36 @@
+{
+  "input": "hardened.example.com",
+  "requestedUrl": "https://hardened.example.com/",
+  "finalUrl": "https://www.hardened.example.com/",
+  "status": 200,
+  "redirects": [
+    { "from": "https://hardened.example.com/", "to": "https://www.hardened.example.com/", "status": 301 }
+  ],
+  "headers": {
+    "server": "nginx",
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "no-cache",
+    "vary": "Accept-Encoding",
+    "strict-transport-security": "max-age=63072000; includeSubDomains; preload",
+    "content-security-policy": "default-src 'self'; script-src 'self' 'nonce-4f9a2c1e8b'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+    "x-frame-options": "DENY",
+    "x-content-type-options": "nosniff",
+    "referrer-policy": "strict-origin-when-cross-origin",
+    "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=()",
+    "cross-origin-opener-policy": "same-origin"
+  },
+  "setCookies": [
+    "__Host-session=8c1f0e2a9b7d4e6f; Path=/; Secure; HttpOnly; SameSite=Lax"
+  ],
+  "httpProbe": { "result": "redirects-to-https", "status": 301, "location": "https://hardened.example.com/" },
+  "tls": {
+    "valid": true,
+    "error": null,
+    "validTo": "2027-01-14T23:59:59.000Z",
+    "daysLeft": 84,
+    "issuer": "Let's Encrypt",
+    "protocol": "TLSv1.3"
+  },
+  "timingMs": 212,
+  "scannedAt": "2026-10-22T15:20:00.000Z"
+}

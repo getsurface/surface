@@ -1,0 +1,30 @@
+{
+  "input": "leaky.example.com",
+  "requestedUrl": "https://leaky.example.com/",
+  "finalUrl": "https://leaky.example.com/",
+  "status": 200,
+  "redirects": [],
+  "headers": {
+    "server": "nginx/1.18.0",
+    "x-powered-by": "PHP/7.4.3",
+    "content-type": "text/html; charset=UTF-8",
+    "cache-control": "no-cache, private",
+    "date": "Thu, 22 Oct 2026 15:20:00 GMT",
+    "x-debug-token": "a1b2c3",
+    "x-debug-token-link": "https://leaky.example.com/_profiler/a1b2c3"
+  },
+  "setCookies": [
+    "PHPSESSID=9k3j2h1g0f8e7d6c5b4a; path=/"
+  ],
+  "httpProbe": { "result": "serves-http", "status": 200, "location": null },
+  "tls": {
+    "valid": true,
+    "error": null,
+    "validTo": "2026-12-08T23:59:59.000Z",
+    "daysLeft": 47,
+    "issuer": "Let's Encrypt",
+    "protocol": "TLSv1.2"
+  },
+  "timingMs": 734,
+  "scannedAt": "2026-10-22T15:20:00.000Z"
+}
