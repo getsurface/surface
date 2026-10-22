@@ -8,14 +8,15 @@ The check is passive: a few ordinary requests (the page over HTTPS, a plain-HTTP
 
 ## Run locally
 
-Requires Node.js 20+. There are no dependencies, so no `npm install`.
+Requires Node.js 22+. There are no dependencies, so no `npm install`.
 
 ```bash
 npm run dev        # http://localhost:3000
-npm test           # 214 tests
+npm test           # full test suite
 ```
 
 Locally, only public sites can be scanned; internal addresses are blocked exactly as in production.
+The rate limit keys on the socket address; set `TRUST_PROXY=1` only when the server sits behind a proxy you control that sets `X-Forwarded-For`.
 To test against your own local server there is a `SURFACE_ALLOW_PRIVATE=1` flag.
 **Never enable it in production.** It turns off the protection against scanning internal networks.
 
@@ -69,7 +70,7 @@ Score: `20 × urgent + 8 × to fix + 1 × info`, capped at 100. Under 25 is Low,
 ### How the service protects itself
 - Blocks local, private, reserved and cloud-metadata addresses (IPv4 and IPv6, including tricky forms like `2130706433` and `0x7f.1`).
 - DNS is validated at connect time, so swapping the address between check and request (DNS rebinding) doesn't work.
-- Every redirect is re-validated, up to 5.
+- Every redirect is re-validated, up to 5, and its query string is dropped, so Surface can't be used to relay chosen requests to other sites.
 - Only ports 80 and 443, response bodies are never read, timeouts on every step.
 - Values from third-party headers are rendered as text only, so a header can't inject a script.
 - Scans can only be started from our own page (`X-Surface` header plus a `Sec-Fetch-Site` check), so other sites can't run scans through their visitors' browsers.
@@ -77,4 +78,8 @@ Score: `20 × urgent + 8 × to fix + 1 × info`, capped at 100. Under 25 is Low,
 - The `SURFACE_ALLOW_PRIVATE` flag is ignored on Vercel, even if set by mistake.
 - Reports are not stored.
 
-The API is closed to outside callers: a direct `curl` without the `X-Surface: 1` header gets a 403. That's expected.
+Other websites can't run scans through their visitors' browsers: a request without the `X-Surface: 1` header, or from another site, gets a 403. Scripts that add the header are still bound by the rate limits.
+
+## Security
+
+Found a way around the protections above? Please report it privately, see [SECURITY.md](SECURITY.md).

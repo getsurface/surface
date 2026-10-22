@@ -386,8 +386,7 @@ const DNS_TRIES = 2;
  * scan on the instance. c-ares is fully async and bounded by timeout × tries.
  * Same callback shape as dns.lookup(host, { all: true }).
  */
-export function aresResolve(hostname, _opts, callback) {
-  const resolver = new dns.Resolver({ timeout: DNS_TIMEOUT_MS, tries: DNS_TRIES });
+export function aresResolve(hostname, _opts, callback, resolver = new dns.Resolver({ timeout: DNS_TIMEOUT_MS, tries: DNS_TRIES })) {
   const found = [];
   let pending = 2;
   let firstError = null;

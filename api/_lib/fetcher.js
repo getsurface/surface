@@ -98,7 +98,9 @@ export function toScanError(err) {
 // HTTPS -> HTTP fallback applies to connection-level failures only: refused,
 // reset, timeout, TLS protocol errors … not to DNS failures or blocked targets.
 function shouldFallback(err) {
-  if (err instanceof ScanError) return err.code === 'timeout';
+  // A timeout while DNS was still resolving says nothing about HTTPS; falling
+  // back would only repeat the slow lookup.
+  if (err instanceof ScanError) return err.code === 'timeout' && err.resolved !== false;
   if (isDnsError(err)) return false;
   return Boolean(err) && (typeof err.code === 'string' || err instanceof AggregateError);
 }
@@ -223,6 +225,7 @@ function requestOnce(url, ctx, { rejectUnauthorized = true, timeoutMs = ctx.hopT
 
     let settled = false;
     let connected = false;
+    let resolved = net.isIP(host) !== 0; // IP literals skip the DNS lookup
     let req;
     const finish = (fn, value) => {
       if (settled) return;
@@ -246,6 +249,7 @@ function requestOnce(url, ctx, { rejectUnauthorized = true, timeoutMs = ctx.hopT
     const timer = setTimeout(() => {
       const e = new ScanError('timeout');
       e.connected = connected;
+      e.resolved = resolved;
       fail(e);
     }, limit);
 
@@ -257,7 +261,17 @@ function requestOnce(url, ctx, { rejectUnauthorized = true, timeoutMs = ctx.hopT
     }
     ctx.signal?.addEventListener('abort', onAbort, { once: true });
 
+    // A GET never asks to switch protocols; a 101 would otherwise hold the hop
+    // until its timeout.
+    req.on('upgrade', (res, sock) => {
+      sock.destroy();
+      fail(new ScanError('unreachable'));
+    });
+
     req.on('socket', (sock) => {
+      sock.once('lookup', () => {
+        resolved = true;
+      });
       const onConnect = () => {
         connected = true;
         const blocked = checkRemote(sock);
@@ -372,6 +386,10 @@ async function runChain(startUrl, ctx) {
     // Re-validate scheme, port, host and IP literal for the next hop. Its DNS
     // answer is validated at connect time by safeLookup.
     const safeNext = validateUrl(next, { redirect: true });
+    // Drop the query on every hop, as for the user's input: a redirect must not
+    // turn Surface into a relay that sends chosen query strings to other sites.
+    safeNext.search = '';
+    safeNext.hash = '';
     if (visited.has(safeNext.href)) return final('loop');
     redirects.push({ from: current.href, to: safeNext.href, status: res.status });
     visited.add(safeNext.href);
@@ -393,9 +411,9 @@ async function runChainWithFallback(startUrl, ctx) {
 }
 
 /** GET http://<host>/ without following redirects. Never throws. */
-async function runProbe(host, ctx, timeoutMs) {
+async function runProbe(host, ctx, timeoutMs, port = 80) {
   try {
-    const url = validateUrl(new URL(`http://${host}/`));
+    const url = validateUrl(new URL(`http://${host}${port === 80 ? '' : `:${port}`}/`));
     const res = await requestOnce(url, ctx, { timeoutMs });
     const loc = resolveLocation(res.location, url);
     if (REDIRECT_STATUSES.has(res.status) && loc?.protocol === 'https:') {
@@ -424,6 +442,7 @@ export async function fetchSnapshot(url, input, opts = {}) {
     probeTimeoutMs: opts.probeTimeoutMs ?? LIMITS.probeTimeoutMs,
     budgetMs: Math.min(opts.budgetMs ?? LIMITS.budgetMs, LIMITS.budgetMs),
     maxRedirects: Math.min(opts.maxRedirects ?? LIMITS.maxRedirects, LIMITS.maxRedirects),
+    probePort: allowPrivate() ? (opts.probePort ?? 80) : 80, // test hook, local only
   };
   const startUrl = validateUrl(url);
   const started = Date.now();
@@ -437,7 +456,7 @@ export async function fetchSnapshot(url, input, opts = {}) {
   };
 
   // Plain-HTTP probe in parallel with the main chain (same host, port 80, no follow).
-  const probe = runProbe(startUrl.hostname, ctx, cfg.probeTimeoutMs);
+  const probe = runProbe(startUrl.hostname, ctx, cfg.probeTimeoutMs, cfg.probePort);
 
   let chain;
   try {

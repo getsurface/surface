@@ -29,7 +29,6 @@ body = body.replace(/<script[^>]*src=["'][^"']*app\.js["'][^>]*>\s*<\/script>/i,
 const safeJs = js.replace(/<\/script/gi, '<\\/script');
 
 const page = `<title>${title}</title>
-<meta name="claude:viewport-fit-sides" content="cover">
 ${fontLinks}
 <style>
 ${css}

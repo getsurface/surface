@@ -1,6 +1,9 @@
-test
-scripts
-server.js
-SPEC.md
-README.md
-*.zip
+/*
+!/api
+!/assets
+!/index.html
+!/404.html
+!/robots.txt
+!/.well-known
+!/package.json
+!/vercel.json

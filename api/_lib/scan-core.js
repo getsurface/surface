@@ -64,14 +64,28 @@ function headerValue(v) {
   return (Array.isArray(v) ? v[0] : v) ?? '';
 }
 
-/** Client IP = first x-forwarded-for entry, else x-real-ip, else socket address. */
-export function getClientIp(req) {
+function firstIp(value) {
+  const ip = String(headerValue(value)).split(',')[0].trim();
+  return net.isIP(ip) ? ip : '';
+}
+
+/**
+ * Client IP for rate limiting. Forwarding headers are only trusted where a
+ * proxy we control sets them: on Vercel (its edge overwrites them) or when
+ * TRUST_PROXY=1. Anywhere else a client could send any value, so the socket
+ * address is used. Values that aren't a plain IP are ignored, which also
+ * keeps the limiter's keys short.
+ */
+export function getClientIp(req, env = process.env) {
   const h = req?.headers || {};
-  const xff = String(headerValue(h['x-forwarded-for'])).split(',')[0].trim();
-  if (xff) return xff;
-  const real = String(headerValue(h['x-real-ip'])).trim();
-  if (real) return real;
-  return req?.socket?.remoteAddress || 'unknown';
+  const socketIp = req?.socket?.remoteAddress || 'unknown';
+  if (env.VERCEL) {
+    return firstIp(h['x-vercel-forwarded-for']) || firstIp(h['x-forwarded-for']) || firstIp(h['x-real-ip']) || socketIp;
+  }
+  if (env.TRUST_PROXY === '1') {
+    return firstIp(h['x-forwarded-for']) || firstIp(h['x-real-ip']) || socketIp;
+  }
+  return socketIp;
 }
 
 let analyzeModule;
