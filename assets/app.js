@@ -165,14 +165,15 @@
   // Constants
   // ---------------------------------------------------------------------------
   var SEVERITIES = ['crit', 'warn', 'info', 'ok'];
-  var SEV_LABEL = { crit: 'Urgent', warn: 'Fix', info: 'Info', ok: 'Good' };
+  var SEV_LABEL = { crit: 'Urgent', warn: 'To fix', info: 'Info', ok: 'Good' };
   var LEVELS = ['low', 'moderate', 'high'];
   var LEVEL_LABEL = { low: 'Low', moderate: 'Moderate', high: 'High' };
   var FILTERS = ['all', 'crit', 'warn', 'info', 'ok'];
   var CLIENT_TIMEOUT_MS = 25000;
   var MAX_FINDINGS = 200;
 
-  var MSG_UNREACHABLE = 'The scanner isn\'t reachable from here. Deploy the project to run live checks.';
+  var MSG_OFFLINE = 'Couldn\'t reach Surface. Check your connection and try again.';
+  var MSG_NOT_FOUND = 'The checker isn\'t available right now. Try again later.';
   var MSG_TIMEOUT = 'The check took too long. Try again in a moment.';
   var MSG_GENERIC = 'Something went wrong on our side. Try again.';
   var MSG_EMPTY = 'Enter a website address.';
@@ -187,8 +188,21 @@
     unreachable: 'The site didn\'t respond. It may be down or blocking automated checks.',
     timeout: 'The site took too long to answer. Try again in a moment.',
     method_not_allowed: 'Use GET.',
+    forbidden: 'This request was blocked. Reload the page and try again.',
     internal: MSG_GENERIC
   };
+
+  // Server errors about the address itself: the input gets marked invalid.
+  var INPUT_ERROR_CODES = ['invalid_url', 'blocked_target', 'dns_failed'];
+
+  /** Message for a response without a usable JSON body (proxy, CDN or platform error page). */
+  function messageForStatus(status) {
+    if (status === 429) return ERROR_MESSAGES.rate_limited;
+    if (status === 408 || status === 504) return MSG_TIMEOUT;
+    if (status === 403) return ERROR_MESSAGES.forbidden;
+    if (status === 404) return MSG_NOT_FOUND;
+    return MSG_GENERIC;
+  }
 
   // ---------------------------------------------------------------------------
   // DOM references
@@ -219,10 +233,10 @@
   var meterScore = $('meter-score');
   var meterTrack = $('meter-track');
   var meterFill = $('meter-fill');
-  var statTotal = $('stat-total');
-  var statOk = $('stat-ok');
-  var statWarn = $('stat-warn');
   var statCrit = $('stat-crit');
+  var statWarn = $('stat-warn');
+  var statInfo = $('stat-info');
+  var statOk = $('stat-ok');
   var filterBar = $('filter-bar');
   var findingsCount = $('findings-count');
   var findingsList = $('findings-list');
@@ -399,7 +413,8 @@
     example: true,     // true while the SAMPLE_REPORT is shown
     filter: 'all',
     busy: false,
-    renderSeq: 0
+    renderSeq: 0,
+    presetHost: ''     // host from a ?url= link, named in the example note
   };
 
   function setLevelClass(node, level) {
@@ -415,6 +430,9 @@
 
     reportExample.hidden = !isExample;
     reportExampleNote.hidden = !isExample;
+    reportExampleNote.textContent = state.presetHost
+      ? 'Tick the box and press Check my site to check ' + state.presetHost + '.'
+      : 'This is an example report. Run a check to see yours.';
 
     var httpParts = [];
     if (t.status !== null) httpParts.push('HTTP ' + t.status);
@@ -445,10 +463,11 @@
     meterTrack.setAttribute('aria-valuetext',
       report.score + ' out of 100, ' + LEVEL_LABEL[report.level] + ' exposure');
 
-    statTotal.textContent = String(report.counts.total);
-    statOk.textContent = String(report.counts.ok);
-    statWarn.textContent = String(report.counts.warn);
-    statCrit.textContent = String(report.counts.crit);
+    // Same numbers as the filter bar, so the four tiles always add up to "All".
+    statCrit.textContent = String(report.derived.crit);
+    statWarn.textContent = String(report.derived.warn);
+    statInfo.textContent = String(report.derived.info);
+    statOk.textContent = String(report.derived.ok);
   }
 
   function renderFilterCounts(report) {
@@ -466,6 +485,9 @@
   function buildFindingRow(f, idx, seq) {
     var rowId = 'finding-' + seq + '-' + idx;
     var panelId = 'fix-' + seq + '-' + idx;
+    var sevId = rowId + '-sev';
+    var titleId = rowId + '-title';
+    var described = [];
 
     var item = el('div', 'f-item');
     item.setAttribute('role', 'listitem');
@@ -479,20 +501,34 @@
     row.setAttribute('aria-controls', panelId);
 
     var sev = el('span', 'sev sev-' + f.severity);
+    sev.id = sevId;
     sev.appendChild(icon('tpl-ic-' + f.severity));
     sev.appendChild(document.createTextNode(SEV_LABEL[f.severity]));
     row.appendChild(sev);
 
     var main = el('span', 'f-main');
-    main.appendChild(el('span', 'f-title', f.title));
-    if (f.desc) main.appendChild(el('span', 'f-desc', f.desc));
+    var title = el('span', 'f-title', f.title);
+    title.id = titleId;
+    main.appendChild(title);
+    if (f.desc) {
+      var desc = el('span', 'f-desc', f.desc);
+      desc.id = rowId + '-desc';
+      described.push(desc.id);
+      main.appendChild(desc);
+    }
     row.appendChild(main);
 
     if (f.evidence) {
       var val = el('span', 'f-val', f.evidence);
+      val.id = rowId + '-val';
+      described.push(val.id);
       val.setAttribute('title', f.evidence);
       row.appendChild(val);
     }
+
+    // Short name ("Urgent Server version exposed"); the rest is the description.
+    row.setAttribute('aria-labelledby', sevId + ' ' + titleId);
+    if (described.length) row.setAttribute('aria-describedby', described.join(' '));
 
     var chev = icon('tpl-chev');
     if (chev.classList) chev.classList.add('f-chev');
@@ -677,17 +713,22 @@
     }
   }
 
-  function messageFromError(err) {
+  function errorCode(err) {
+    var code = err && typeof err === 'object' && typeof err.code === 'string' ? err.code : '';
+    return Object.prototype.hasOwnProperty.call(ERROR_MESSAGES, code) ? code : '';
+  }
+
+  function messageFromError(err, status) {
     if (err && typeof err === 'object') {
       var msg = clean(err.message, 300);
       if (msg) return msg;
-      var code = typeof err.code === 'string' ? err.code : '';
-      if (Object.prototype.hasOwnProperty.call(ERROR_MESSAGES, code)) return ERROR_MESSAGES[code];
+      var code = errorCode(err);
+      if (code) return ERROR_MESSAGES[code];
     }
-    return MSG_GENERIC;
+    return messageForStatus(status);
   }
 
-  /** Calls the API. Resolves to { report } or { error: message }; never throws. */
+  /** Calls the API. Resolves to { report } or { error: message, code }; never throws. */
   function requestScan(value) {
     var controller = typeof AbortController === 'function' ? new AbortController() : null;
     var timedOut = false;
@@ -706,22 +747,25 @@
     };
     if (controller) opts.signal = controller.signal;
 
-    function fail(message) { return { error: message }; }
+    function fail(message, code) { return { error: message, code: code || '' }; }
 
     return fetch(url, opts)
       .then(function (res) {
-        if (res.status === 404) return fail(MSG_UNREACHABLE);
         return res.json().then(function (data) {
-          if (data && data.ok === true && data.report && typeof data.report === 'object') {
+          if (res.ok && data && data.ok === true && data.report && typeof data.report === 'object') {
             return { report: data.report };
           }
-          if (data && data.ok === false) return fail(messageFromError(data.error));
-          return fail(res.ok ? MSG_GENERIC : MSG_UNREACHABLE);
+          if (data && data.ok === false) {
+            return fail(messageFromError(data.error, res.status), errorCode(data.error));
+          }
+          return fail(res.ok ? MSG_GENERIC : messageForStatus(res.status));
         }, function () {
-          return fail(timedOut ? MSG_TIMEOUT : MSG_UNREACHABLE);
+          // Not JSON: a platform, proxy or CDN error page. Go by the status.
+          if (timedOut) return fail(MSG_TIMEOUT);
+          return fail(res.ok ? MSG_GENERIC : messageForStatus(res.status));
         });
       }, function () {
-        return fail(timedOut ? MSG_TIMEOUT : MSG_UNREACHABLE);
+        return fail(timedOut ? MSG_TIMEOUT : MSG_OFFLINE);
       })
       .then(function (result) {
         clearTimeout(timer);
@@ -755,9 +799,13 @@
     reportTitle.focus({ preventScroll: true });
   }
 
-  function onFailure(message) {
+  function onFailure(message, code) {
     setBusy(false);
     setStatus('');
+    if (INPUT_ERROR_CODES.indexOf(code) !== -1) {
+      showError(message, input); // marks the field and moves focus to it
+      return;
+    }
     showError(message);
     var active = document.activeElement;
     if (!active || active === document.body || active === submitBtn) input.focus();
@@ -776,7 +824,7 @@
     setBusy(true, value);
     requestScan(value).then(function (result) {
       if (result.report) onSuccess(result.report, value);
-      else onFailure(result.error || MSG_GENERIC);
+      else onFailure(result.error || MSG_GENERIC, result.code);
     }, function () {
       onFailure(MSG_GENERIC);
     });
@@ -784,6 +832,11 @@
 
   input.addEventListener('input', function () {
     if (input.getAttribute('aria-invalid')) clearError();
+    // The deep-link note names the preset host; drop it once the address changes.
+    if (state.presetHost && state.example) {
+      state.presetHost = '';
+      renderHead(state.report, true);
+    }
   });
   consent.addEventListener('change', function () {
     if (consent.getAttribute('aria-invalid')) clearError();
@@ -844,12 +897,16 @@
   // ---------------------------------------------------------------------------
   // Init
   // ---------------------------------------------------------------------------
-  renderReport(normalizeReport(SAMPLE_REPORT), true);
-
   try {
-    var preset = new URLSearchParams(window.location.search).get('url');
-    if (preset) input.value = clean(preset, 2048);
+    var preset = clean(new URLSearchParams(window.location.search).get('url'), 2048);
+    if (preset) {
+      input.value = preset;
+      state.presetHost = hostFrom(/^[a-z][a-z0-9+.-]*:\/\//i.test(preset) ? preset : 'https://' + preset) ||
+        clean(preset, 80);
+    }
   } catch (e) { /* ignore malformed query strings */ }
+
+  renderReport(normalizeReport(SAMPLE_REPORT), true);
 
   openFaqFromHash(window.location.hash);
 })();

@@ -78,7 +78,7 @@
     <p id="scan-status" class="sr-only" role="status" aria-live="polite"></p>
     <div class="consent">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-      Read-only. We only look at what your server already sends back.
+      <span>Read-only. We only look at what your server already sends back.</span>
     </div>
     <noscript><p class="noscript">Surface needs JavaScript to run a check.</p></noscript>
   </div>
@@ -118,31 +118,31 @@
     <div class="score-row">
       <div class="stat">
         <div class="stat-top">
-          <span class="stat-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M9 11H3v10h6V11Z"></path><path d="M15 3H9v18h6V3Z"></path><path d="M21 7h-6v14h6V7Z"></path></svg></span>
-          <div class="k">Checks run</div>
+          <span class="stat-ic crit" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg></span>
+          <div class="k">Urgent</div>
         </div>
-        <div class="v" id="stat-total">0</div>
-      </div>
-      <div class="stat">
-        <div class="stat-top">
-          <span class="stat-ic ok" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M20 6 9 17l-5-5"></path></svg></span>
-          <div class="k">Looking good</div>
-        </div>
-        <div class="v ok" id="stat-ok">0</div>
+        <div class="v crit" id="stat-crit">0</div>
       </div>
       <div class="stat">
         <div class="stat-top">
           <span class="stat-ic warn" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76Z"></path></svg></span>
-          <div class="k">Worth fixing</div>
+          <div class="k">To fix</div>
         </div>
         <div class="v warn" id="stat-warn">0</div>
       </div>
       <div class="stat">
         <div class="stat-top">
-          <span class="stat-ic crit" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg></span>
-          <div class="k">Urgent</div>
+          <span class="stat-ic info" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg></span>
+          <div class="k">Info</div>
         </div>
-        <div class="v crit" id="stat-crit">0</div>
+        <div class="v info" id="stat-info">0</div>
+      </div>
+      <div class="stat">
+        <div class="stat-top">
+          <span class="stat-ic ok" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M20 6 9 17l-5-5"></path></svg></span>
+          <div class="k">Good</div>
+        </div>
+        <div class="v ok" id="stat-ok">0</div>
       </div>
     </div>
 
@@ -217,7 +217,7 @@
       </div>
       <div class="acc-item" id="faq-free">
         <h3><button type="button" class="acc-q" id="faq-free-q" aria-expanded="false" aria-controls="faq-free-a">Is it really free?<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"></path></svg></button></h3>
-        <div class="acc-a" id="faq-free-a" role="region" aria-labelledby="faq-free-q"><p>Yes. No signup, no card, no token. Paste a URL and read the report.</p></div>
+        <div class="acc-a" id="faq-free-a" role="region" aria-labelledby="faq-free-q"><p>Yes. No signup, no card. Paste a URL and read the report.</p></div>
       </div>
     </div>
   </div>
