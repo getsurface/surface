@@ -217,6 +217,31 @@ body::before {
 
 /* ---------- HERO ---------- */
 .hero { padding-block: 72px 40px; text-align: center; }
+
+/* Token announcement pill */
+.announce {
+  display: inline-flex; align-items: center; gap: 9px;
+  margin: 0 0 18px; padding: 5px 6px 5px 12px;
+  border: 1px solid var(--ash); border-radius: 9999px;
+  background: var(--canvas); color: var(--graphite);
+  font-size: 13px; line-height: 1.4;
+}
+.announce b { font-family: var(--mono); font-weight: 600; color: var(--ink); letter-spacing: -0.01em; }
+.announce-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  background: var(--blue);
+  animation: announce-pulse 2s ease-out infinite;
+}
+@keyframes announce-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--blue) 45%, transparent); }
+  70% { box-shadow: 0 0 0 7px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+@media (prefers-reduced-motion: reduce) { .announce-dot { animation: none; } }
+.announce-chip {
+  font-size: 12px; font-weight: 500; color: var(--blue);
+  background: var(--blue-wash); border-radius: 9999px; padding: 2px 9px;
+}
 .pills {
   display: flex; flex-wrap: wrap; gap: 8px;
   justify-content: center; margin-bottom: 26px;
