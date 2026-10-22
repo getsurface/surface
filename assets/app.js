@@ -17,7 +17,7 @@
   //   Set-Cookie: PHPSESSID (Secure; HttpOnly), theme (Secure; SameSite=Lax),
   //   http:// -> 301 to https, valid Let's Encrypt cert with 84 days left.
   // Scoring: 4 warn x 8 + 5 info x 1 = 37 -> "moderate" (25-54).
-  // test/sample.test.js fails when this drifts from analyze(); regenerate it then.
+  // test/sample.test.js fails when this drifts; run `node scripts/update-sample.mjs`.
   // ---------------------------------------------------------------------------
   var SAMPLE_REPORT = {
     "target": {
@@ -109,7 +109,7 @@
         "title": "Cookies without SameSite",
         "desc": "Chrome and Edge treat these as Lax by default but other browsers may not, so setting it yourself keeps behavior the same everywhere.",
         "evidence": "PHPSESSID",
-        "fix": "Add `SameSite=Lax` to your cookies, or `SameSite=Strict` for admin sessions. PHP: `session.cookie_samesite = \"Lax\"`; Express: `cookie: { sameSite: 'lax' }`; nginx 1.19.3+: put all flags for a cookie on one line, such as `proxy_cookie_flags PHPSESSID secure httponly samesite=lax;` (drop `httponly` if your own JavaScript reads it), because nginx applies only the first line that matches a cookie."
+        "fix": "Add `SameSite=Lax` to your cookies, or `SameSite=Strict` for admin sessions. PHP: `session.cookie_samesite = \"Lax\"`; Express: `cookie: { sameSite: 'lax' }`; nginx 1.19.3+: put every flag a cookie needs on one line, such as `proxy_cookie_flags PHPSESSID samesite=lax;`, because nginx applies only the first line that matches a cookie."
       },
       {
         "id": "hosting",
@@ -945,8 +945,11 @@
     var preset = clean(new URLSearchParams(window.location.search).get('url'), 2048);
     if (preset) {
       input.value = preset;
-      state.presetHost = hostFrom(/^[a-z][a-z0-9+.-]*:\/\//i.test(preset) ? preset : 'https://' + preset) ||
-        clean(preset, 80);
+      // Only a plain host name or IP is echoed into the note: a crafted link
+      // must not put its own sentence on this page.
+      var presetHost = hostFrom(/^[a-z][a-z0-9+.-]*:\/\//i.test(preset) ? preset : 'https://' + preset);
+      state.presetHost = /^(?:[a-z0-9-]{1,63}\.)+[a-z0-9-]{1,63}$|^\[[0-9a-f:.]+\]$/i.test(presetHost) &&
+        presetHost.length <= 253 ? presetHost : '';
     }
   } catch (e) { /* ignore malformed query strings */ }
 

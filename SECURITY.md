@@ -15,10 +15,12 @@ Include the input you used, what happened and what you expected. We aim to reply
 - Server-side request forgery: any way to make Surface connect to a private, loopback,
   link-local or cloud-metadata address, or to a port other than 80 and 443, including through
   redirects or DNS tricks.
-- Anything that makes Surface send traffic beyond its few ordinary requests (one page fetch with
-  up to five redirects, one plain-HTTP probe, one TLS handshake).
+- Anything that makes Surface send traffic beyond its ordinary requests: a page fetch over HTTPS
+  that follows up to five redirects (one certificate retry per hop, and one fallback to plain HTTP
+  when HTTPS can't connect), plus one plain-HTTP probe of the home page.
 - Injection of report data into the page as HTML or script.
-- Bypassing the rate limit or the same-origin check on `/api/scan`.
+- Bypassing the per-client rate limit on `/api/scan`, or making another website's visitors run
+  scans from their browsers. Calling the API from your own scripts is expected and not a bug.
 
 ## Out of scope
 

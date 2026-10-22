@@ -293,8 +293,9 @@ on plain `node:http`.
   IPv4-mapped (`::ffff:a.b.c.d`) / NAT64 (`64:ff9b::a.b.c.d`) forms checked against
   the IPv4 list. IP-literal hosts go through the same check.
 - Every redirect hop is re-validated with the same rules (scheme, port, host,
-  IP) and its query and hash are dropped, so a redirect can't make Surface relay
-  chosen requests to other sites. Max 5 redirects, loop detection. A `101`
+  IP); a hop to another host drops its query (no relaying chosen query strings),
+  same-host hops keep it. A redirect back to a URL already requested is a `loop`;
+  one that only repeats after its query was dropped is `unfollowable`. Max 5 redirects, loop detection. A `101`
   response ends the hop as `unreachable`.
 - No HTTPS -> HTTP fallback when the timeout hit before DNS resolved.
 - DNS goes through c-ares (`dns.Resolver`, 2.5 s × 2 tries), not getaddrinfo,
@@ -304,7 +305,8 @@ on plain `node:http`.
   regex is linear-time on hostile input.
 - Timeouts: 8 s per hop, 5 s for the HTTP probe, whole scan budget ≤ 15 s.
 - HTTPS first, also when the input says `http://` (the plain-HTTP probe reports what
-  port 80 does); on connection failure (ECONNREFUSED, ECONNRESET, timeout, TLS
+  port 80 does; for `http://` input a certificate error on that first try falls back
+  to `http://` rather than reporting another site's default certificate); on connection failure (ECONNREFUSED, ECONNRESET, timeout, TLS
   protocol error) fall back to `http://` same host/path. On certificate
   verification errors, retry once with `rejectUnauthorized: false` and record
   `tls.valid = false` + the error code.
@@ -312,8 +314,8 @@ on plain `node:http`.
 - In-memory rate limit: 8 scans / 60 s per client IP (best effort on serverless;
   production adds a Vercel Firewall rule on `/api/scan`). Client IP: on Vercel
   `x-vercel-forwarded-for`, else the first `x-forwarded-for` entry, else
-  `x-real-ip`; with `TRUST_PROXY=1` the first `x-forwarded-for` entry, else
-  `x-real-ip`; otherwise the socket address. Values that aren't a plain IP are
+  `x-real-ip`; with `TRUST_PROXY=1` (one trusted proxy) `x-real-ip`, else the
+  last `x-forwarded-for` entry; otherwise the socket address. Values that aren't a plain IP are
   ignored. IPv6 clients share a bucket per /64.
 - `SURFACE_ALLOW_PRIVATE=1` env disables the IP/hostname blocklist **for local
   testing only** (port policy too). Default off, and ignored whenever `VERCEL` is set.

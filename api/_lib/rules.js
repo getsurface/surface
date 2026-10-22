@@ -9,7 +9,8 @@ const MAX_EVIDENCE = 64;
 const ABSENT = "—";
 
 // "sid" only as its own word ("sid", "connect.sid"), so "sidebar_state" isn't a session cookie.
-const SENSITIVE_COOKIE = /sess|(?:^|[^a-z])sid(?![a-z])|auth|token|jwt|login|logged|remember|csrf/i;
+// `sid` also inside names such as SSID, APISID or __Secure-1PSID, but not visid (visitor ids) or sidebar.
+const SENSITIVE_COOKIE = /sess|(?<!vi)sid(?![a-z])|auth|token|jwt|login|logged|remember|csrf/i;
 // CSRF cookies that front-end code is designed to read (Angular, Laravel, Django).
 const SCRIPT_READABLE_COOKIE = /^(?:xsrf-token|csrftoken)$/i;
 // Linear-time on hostile input: /\d+\.\d+/ is quadratic on long digit runs.
@@ -534,9 +535,9 @@ function httpRedirect(snapshot) {
       const location = typeof httpProbe.location === "string" ? httpProbe.location.trim() : "";
       if (status !== null && status >= 300 && status < 400 && /^http:\/\//i.test(location)) {
         return make(
-          "info",
-          "HTTP redirect doesn't go straight to HTTPS",
-          "Plain HTTP sends visitors to another unencrypted address first, so that extra hop can still be read or altered on the way.",
+          "warn",
+          "HTTP redirects to another plain-HTTP address",
+          "Plain HTTP sends visitors to another unencrypted address, which Surface doesn't follow, so your site may still work without encryption there.",
           `${status} → ${location}`,
           "Point the port 80 redirect straight at the final `https://` address. Nginx: `return 301 https://$host$request_uri;`; Apache: `RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]`."
         );
@@ -989,11 +990,18 @@ const NGINX_COOKIE_NAME = /^[A-Za-z0-9!#$%&'*+.^_|~-]{1,40}$/;
  * proxy_cookie_flags line that matches a cookie, so every fix suggests the
  * same single line with all flags, naming the cookie.
  */
-function nginxCookieFix(name, mayBeScriptRead) {
-  const shown = NGINX_COOKIE_NAME.test(name ?? "") ? name : "<cookie>";
-  const line = `\`proxy_cookie_flags ${shown} secure httponly samesite=lax;\``;
-  const caveat = mayBeScriptRead ? " (drop `httponly` if your own JavaScript reads it)" : "";
-  return `nginx 1.19.3+: put all flags for a cookie on one line, such as ${line}${caveat}, because nginx applies only the first line that matches a cookie.`;
+function nginxCookieFix(cookie, scheme) {
+  const name = cookie?.name ?? "";
+  const shown = NGINX_COOKIE_NAME.test(name) ? name : "<cookie>";
+  // Only the flags this cookie lacks: `secure` only over HTTPS (browsers drop
+  // Secure cookies set over plain HTTP), `samesite=lax` only when it has no
+  // SameSite (never override a deliberate SameSite=None).
+  const flags = [];
+  if (scheme === "https:" && !cookie?.secure) flags.push("secure");
+  if (cookie?.sensitive && !cookie?.httpOnly) flags.push("httponly");
+  if (!cookie?.sameSite) flags.push("samesite=lax");
+  if (flags.length === 0) return "";
+  return `nginx 1.19.3+: put every flag a cookie needs on one line, such as \`proxy_cookie_flags ${shown} ${flags.join(" ")};\`, because nginx applies only the first line that matches a cookie.`;
 }
 
 function cookieSecure(snapshot) {
@@ -1020,7 +1028,7 @@ function cookieSecure(snapshot) {
       "Cookies sent without Secure",
       "These cookies can also travel over plain HTTP, where anyone on the same network can read them.",
       nameList(insecure.map((c) => c.name)),
-      `Add \`Secure\` to every cookie. PHP: \`session.cookie_secure = 1\` in php.ini; Express: \`cookie: { secure: true }\` in your session settings, plus \`app.set('trust proxy', 1)\` behind a proxy or a host such as Vercel, or the cookie is never set. ${nginxCookieFix(insecure[0].name, true).replace(/^nginx/, "Nginx")}`
+      `Add \`Secure\` to every cookie. PHP: \`session.cookie_secure = 1\` in php.ini; Express: \`cookie: { secure: true }\` in your session settings, plus \`app.set('trust proxy', 1)\` behind a proxy or a host such as Vercel, or the cookie is never set. ${nginxCookieFix(insecure[0], scheme).replace(/^nginx/, "Nginx")}`
     );
   }
   return finding(
@@ -1035,7 +1043,7 @@ function cookieSecure(snapshot) {
 }
 
 function cookieHttpOnly(snapshot) {
-  const { cookies } = view(snapshot);
+  const { cookies, scheme } = view(snapshot);
   if (cookies.length === 0) return null;
 
   const readable = cookies.filter((c) => !c.httpOnly);
@@ -1048,7 +1056,7 @@ function cookieHttpOnly(snapshot) {
       "Session cookie readable by scripts",
       "If any script on your page is compromised, it can read this cookie and take over a visitor's session.",
       nameList(sensitive.map((c) => c.name)),
-      `Add \`HttpOnly\` to session and login cookies. PHP: \`session.cookie_httponly = 1\`; Express: \`cookie: { httpOnly: true }\`; ${nginxCookieFix(sensitive[0].name, false)} A CSRF token cookie that your front-end must read, such as \`XSRF-TOKEN\`, is the one exception.`
+      `Add \`HttpOnly\` to session and login cookies. PHP: \`session.cookie_httponly = 1\`; Express: \`cookie: { httpOnly: true }\`; ${nginxCookieFix(sensitive[0], scheme)} A CSRF token cookie that your front-end must read, such as \`XSRF-TOKEN\`, is the one exception.`
     );
   }
   if (readable.length > 0) {
@@ -1074,7 +1082,7 @@ function cookieHttpOnly(snapshot) {
 }
 
 function cookieSameSite(snapshot) {
-  const { cookies } = view(snapshot);
+  const { cookies, scheme } = view(snapshot);
   if (cookies.length === 0) return null;
 
   const noneInsecure = cookies.filter((c) => c.sameSite === "none" && !c.secure);
@@ -1098,7 +1106,7 @@ function cookieSameSite(snapshot) {
       "Cookies without SameSite",
       "Chrome and Edge treat these as Lax by default but other browsers may not, so setting it yourself keeps behavior the same everywhere.",
       nameList(missing.map((c) => c.name)),
-      `Add \`SameSite=Lax\` to your cookies, or \`SameSite=Strict\` for admin sessions. PHP: \`session.cookie_samesite = "Lax"\`; Express: \`cookie: { sameSite: 'lax' }\`; ${nginxCookieFix(missing[0].name, true)}`
+      `Add \`SameSite=Lax\` to your cookies, or \`SameSite=Strict\` for admin sessions. PHP: \`session.cookie_samesite = "Lax"\`; Express: \`cookie: { sameSite: 'lax' }\`; ${nginxCookieFix(missing[0], scheme)}`
     );
   }
   return finding(
@@ -1137,7 +1145,7 @@ function cors(snapshot) {
       return make(
         "info",
         "CORS credentials flag ignored",
-        "Browsers never send cookies or logins to a response that allows any origin, so your credentials header has no effect and only public content is readable.",
+        "Browsers won't let other sites read credentialed responses when any origin is allowed, so this header has no effect.",
         "ACAO: *, credentials: true",
         "Remove `Access-Control-Allow-Credentials: true` if nothing needs it. If other sites must make logged-in requests, check the request's `Origin` against an explicit list of trusted sites and echo back only a match, never every origin."
       );
@@ -1145,7 +1153,7 @@ function cors(snapshot) {
     return make(
       "ok",
       "Public CORS, no logins",
-      "Any website can read this response, but browsers never send your visitors' cookies or logins with it, so only content that's already public is readable.",
+      "Any site can read this page from a visitor's browser, but only anonymously, as any stranger could.",
       "ACAO: *",
       "Nothing to change. This is fine for public pages and files; list specific origins instead of `*` only if the response depends on the visitor's network, such as an intranet."
     );

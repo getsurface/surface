@@ -64,26 +64,28 @@ function headerValue(v) {
   return (Array.isArray(v) ? v[0] : v) ?? '';
 }
 
-function firstIp(value) {
-  const ip = String(headerValue(value)).split(',')[0].trim();
+function pickIp(value, which = 'first') {
+  const parts = String(headerValue(value)).split(',');
+  const ip = (which === 'last' ? parts[parts.length - 1] : parts[0]).trim();
   return net.isIP(ip) ? ip : '';
 }
 
 /**
  * Client IP for rate limiting. Forwarding headers are only trusted where a
- * proxy we control sets them: on Vercel (its edge overwrites them) or when
- * TRUST_PROXY=1. Anywhere else a client could send any value, so the socket
- * address is used. Values that aren't a plain IP are ignored, which also
- * keeps the limiter's keys short.
+ * proxy we control writes them: on Vercel (its edge overwrites them) or with
+ * TRUST_PROXY=1 behind one proxy, which sets X-Real-IP or appends the client
+ * to X-Forwarded-For (so the LAST entry is the one it saw; earlier entries are
+ * whatever the client sent). Anywhere else the socket address is used. Values
+ * that aren't a plain IP are ignored, which also keeps the limiter's keys short.
  */
 export function getClientIp(req, env = process.env) {
   const h = req?.headers || {};
   const socketIp = req?.socket?.remoteAddress || 'unknown';
   if (env.VERCEL) {
-    return firstIp(h['x-vercel-forwarded-for']) || firstIp(h['x-forwarded-for']) || firstIp(h['x-real-ip']) || socketIp;
+    return pickIp(h['x-vercel-forwarded-for']) || pickIp(h['x-forwarded-for']) || pickIp(h['x-real-ip']) || socketIp;
   }
   if (env.TRUST_PROXY === '1') {
-    return firstIp(h['x-forwarded-for']) || firstIp(h['x-real-ip']) || socketIp;
+    return pickIp(h['x-real-ip']) || pickIp(h['x-forwarded-for'], 'last') || socketIp;
   }
   return socketIp;
 }

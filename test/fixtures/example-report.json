@@ -1,0 +1,36 @@
+{
+  "input": "example.com",
+  "requestedUrl": "https://example.com/",
+  "finalUrl": "https://example.com/",
+  "status": 200,
+  "redirects": [],
+  "redirectStop": null,
+  "headers": {
+    "server": "nginx/1.18.0",
+    "x-powered-by": "PHP/7.4.3",
+    "cf-ray": "8d2f1c3b9a7e4f21-FRA",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
+    "x-content-type-options": "nosniff",
+    "content-type": "text/html; charset=UTF-8"
+  },
+  "setCookies": [
+    "PHPSESSID=3f9a1c7e2b; path=/; Secure; HttpOnly",
+    "theme=light; path=/; Secure; SameSite=Lax"
+  ],
+  "httpProbe": {
+    "result": "redirects-to-https",
+    "status": 301,
+    "location": "https://example.com/"
+  },
+  "tls": {
+    "valid": true,
+    "error": null,
+    "validFrom": "2026-10-15T00:00:00.000Z",
+    "validTo": "2027-01-13T00:00:00.000Z",
+    "daysLeft": 84,
+    "issuer": "Let's Encrypt",
+    "protocol": "TLSv1.3"
+  },
+  "timingMs": 312,
+  "scannedAt": "2026-10-22T15:20:00.000Z"
+}

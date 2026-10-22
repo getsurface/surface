@@ -922,7 +922,7 @@ describe("16. cors", () => {
   test("* with credentials -> info: browsers ignore credentials with *", () => {
     const f = cors({ "access-control-allow-origin": "*", "access-control-allow-credentials": "true" });
     expectFinding(f, { severity: "info", title: "CORS credentials flag ignored", evidence: "ACAO: *, credentials: true" });
-    assert.match(f.desc, /never send cookies/);
+    assert.match(f.desc, /no effect/);
     assert.ok(f.fix.includes("`Access-Control-Allow-Credentials: true`"));
     assert.equal(
       cors({ "access-control-allow-origin": "*", "access-control-allow-credentials": "TRUE" }).severity,
@@ -933,7 +933,7 @@ describe("16. cors", () => {
   test("* alone -> ok Public CORS, no logins", () => {
     const f = cors({ "access-control-allow-origin": "*" });
     expectFinding(f, { severity: "ok", title: "Public CORS, no logins", evidence: "ACAO: *" });
-    assert.match(f.desc, /never send/);
+    assert.match(f.desc, /only anonymously/);
     assert.ok(f.fix.startsWith("Nothing to change."));
     assert.match(f.fix, /fine for public/);
     assert.equal(
@@ -1559,11 +1559,11 @@ describe("audit regressions", () => {
 describe("detection audit: http-redirect without extra requests", () => {
   const probe = (p) => one("http-redirect", snap({ httpProbe: p }));
 
-  test("a redirect to another http:// address -> info, evidence shows where it goes", () => {
+  test("a redirect to another http:// address -> warn (not followed), evidence shows where it goes", () => {
     const f = probe({ result: "serves-http", status: 301, location: "http://www.example.com/" });
     expectFinding(f, {
-      severity: "info",
-      title: "HTTP redirect doesn't go straight to HTTPS",
+      severity: "warn",
+      title: "HTTP redirects to another plain-HTTP address",
       evidence: "301 → http://www.example.com/",
     });
     assert.ok(f.fix.includes("return 301 https://$host$request_uri;"));
@@ -1741,7 +1741,9 @@ describe("detection audit: cookies", () => {
 
   test("'sid' counts only as its own word", () => {
     const ho = (name) => one("cookie-httponly", cookies([`${name}=1`])).severity;
-    for (const name of ["sid", "SID", "_sid", "connect.sid", "app-sid", "sid2", "PHPSESSID"]) assert.equal(ho(name), "warn", name);
+    for (const name of ["sid", "SID", "_sid", "connect.sid", "app-sid", "sid2", "PHPSESSID", "SSID", "HSID", "APISID", "SAPISID", "__Secure-1PSID", "__Secure-3PSID", "usid"]) {
+      assert.equal(ho(name), "warn", name);
+    }
     for (const name of ["sidebar_state", "visid_incap_123", "consider_me"]) assert.equal(ho(name), "info", name);
   });
 
@@ -1759,7 +1761,14 @@ describe("detection audit: cookies", () => {
     }
     assert.ok(secure.fix.includes("`app.set('trust proxy', 1)`"));
     const odd = one("cookie-secure", cookies(["we`ird=1"]));
-    assert.ok(odd.fix.includes("`proxy_cookie_flags <cookie> secure httponly samesite=lax;`"), odd.fix);
+    assert.ok(odd.fix.includes("`proxy_cookie_flags <cookie> secure samesite=lax;`"), odd.fix);
+  });
+
+  test("the nginx line adds only what the cookie lacks: no secure over plain HTTP, no samesite over SameSite=None", () => {
+    const http = one("cookie-httponly", snap({ requestedUrl: "http://example.com/", finalUrl: "http://example.com/", setCookies: ["shop_sid=1; path=/"] }));
+    assert.ok(http.fix.includes("`proxy_cookie_flags shop_sid httponly samesite=lax;`"), http.fix);
+    const none = one("cookie-httponly", cookies(["PHPSESSID=1; Secure; SameSite=None"]));
+    assert.ok(none.fix.includes("`proxy_cookie_flags PHPSESSID httponly;`"), none.fix);
   });
 });
 

@@ -849,7 +849,19 @@ describe('fetchSnapshot', () => {
         res.writeHead(302, { Location: '/echo?id=42&token=chosen#frag' });
         return res.end();
       }
-      if (path === '/echo') {
+      if (path === '/to-other') {
+        res.writeHead(302, { Location: `http://b.surface.test:${req.socket.localPort}/echo?id=42&token=chosen` });
+        return res.end();
+      }
+      if (path === '/lang' || path === '/lang?l=en') {
+        if (path === '/lang?l=en') {
+          res.writeHead(200);
+          return res.end();
+        }
+        res.writeHead(302, { Location: '/lang?l=en' });
+        return res.end();
+      }
+      if (path === '/echo' || path.startsWith('/echo?')) {
         res.writeHead(200, { 'X-Seen-Url': req.url });
         return res.end();
       }
@@ -968,13 +980,24 @@ describe('fetchSnapshot', () => {
       assert.equal(snap.headers.location, 'ftp://example.com/');
     }));
 
-  test('redirect hops drop the query string (no relaying chosen requests)', () =>
+  test('same-host redirects keep their query (/ -> /?lang=en is not a loop)', () =>
     allowingPrivate(async () => {
       const base = `http://127.0.0.1:${site.port}`;
       const snap = await fetchSnapshot(new URL(`${base}/to-query`), 'x');
+      assert.equal(snap.headers['x-seen-url'], '/echo?id=42&token=chosen');
+      assert.equal(snap.redirectStop, null);
+      assert.deepEqual(snap.redirects, [{ from: `${base}/to-query`, to: `${base}/echo?id=42&token=chosen`, status: 302 }]);
+      const lang = await fetchSnapshot(new URL(`${base}/lang`), 'x');
+      assert.equal(lang.redirectStop, null, 'not reported as a loop');
+      assert.equal(lang.finalUrl, `${base}/lang?l=en`);
+    }));
+
+  test('redirects to another host drop the query (no relaying chosen requests)', () =>
+    allowingPrivate(async () => {
+      const resolver = fakeResolver({ 'a.surface.test': ['127.0.0.1'], 'b.surface.test': ['127.0.0.1'] });
+      const snap = await fetchSnapshot(new URL(`http://a.surface.test:${site.port}/to-other`), 'x', { dnsLookup: resolver });
       assert.equal(snap.headers['x-seen-url'], '/echo');
-      assert.equal(snap.finalUrl, `${base}/echo`);
-      assert.deepEqual(snap.redirects, [{ from: `${base}/to-query`, to: `${base}/echo`, status: 302 }]);
+      assert.equal(snap.finalUrl, `http://b.surface.test:${site.port}/echo`);
     }));
 
   test('an unrequested 101 ends the hop at once', () =>
@@ -1111,7 +1134,7 @@ describe('fetchSnapshot', () => {
       try {
         const resolver = fakeResolver({ 'surface.test': ['127.0.0.1'] });
         const input = `http://surface.test:${tlsSite.port}/`;
-        const snap = await fetchSnapshot(normalizeInput(input), input, { dnsLookup: resolver, probeTimeoutMs: 500 });
+        const snap = await fetchSnapshot(normalizeInput(input), input, { dnsLookup: resolver, probeTimeoutMs: 500, tlsCa: TEST_TLS.cert });
         assert.equal(snap.requestedUrl, `https://surface.test:${tlsSite.port}/`);
         assert.equal(snap.finalUrl, `https://surface.test:${tlsSite.port}/`);
         assert.equal(snap.status, 200);
@@ -1126,6 +1149,41 @@ describe('fetchSnapshot', () => {
         assert.equal(report.findings.find((f) => f.id === 'hsts').severity, 'ok');
       } finally {
         await tlsSite.close();
+      }
+    }));
+
+  test('http:// input with a bad HTTPS certificate falls back to plain HTTP', () =>
+    allowingPrivate(async () => {
+      // One port that speaks both: TLS (self-signed, untrusted here) and plain HTTP.
+      const tlsServer = https.createServer(TEST_TLS, (req, res) => res.writeHead(200, { 'X-Proto': 'https' }).end());
+      const httpServer = http.createServer((req, res) => res.writeHead(200, { 'X-Proto': 'http' }).end());
+      const sockets = new Set();
+      const both = net.createServer((sock) => {
+        sockets.add(sock);
+        sock.on('close', () => sockets.delete(sock));
+        sock.once('data', (buf) => {
+          sock.pause();
+          sock.unshift(buf);
+          (buf[0] === 0x16 ? tlsServer : httpServer).emit('connection', sock);
+          process.nextTick(() => sock.resume());
+        });
+      });
+      await new Promise((resolve) => both.listen(0, '127.0.0.1', resolve));
+      try {
+        const port = both.address().port;
+        const resolver = fakeResolver({ 'surface.test': ['127.0.0.1'] });
+        const input = `http://surface.test:${port}/`;
+        const snap = await fetchSnapshot(normalizeInput(input), input, { dnsLookup: resolver, probeTimeoutMs: 500 });
+        assert.equal(snap.headers['x-proto'], 'http');
+        assert.equal(snap.finalUrl, `http://surface.test:${port}/`);
+        assert.equal(snap.tls, null);
+        // Typed without a scheme, the same site is checked over HTTPS and the bad certificate is reported.
+        const https1 = await fetchSnapshot(normalizeInput(`surface.test:${port}`), 'x', { dnsLookup: resolver, probeTimeoutMs: 500 });
+        assert.equal(https1.headers['x-proto'], 'https');
+        assert.equal(https1.tls.valid, false);
+      } finally {
+        for (const s of sockets) s.destroy();
+        await new Promise((resolve) => both.close(resolve));
       }
     }));
 
@@ -1272,8 +1330,10 @@ describe('runScan', () => {
     assert.equal(getClientIp({ headers: { 'x-vercel-forwarded-for': '198.51.100.9', 'x-forwarded-for': '203.0.113.5' }, socket: sock }, vercel), '198.51.100.9');
     assert.equal(getClientIp({ headers: { 'x-forwarded-for': '203.0.113.5, 10.0.0.1' }, socket: sock }, vercel), '203.0.113.5');
     assert.equal(getClientIp({ headers: { 'x-real-ip': '203.0.113.6' }, socket: sock }, vercel), '203.0.113.6');
-    // Behind a proxy the operator vouches for.
+    // Behind one proxy the operator vouches for: X-Real-IP, else the entry the proxy appended.
     assert.equal(getClientIp({ headers: { 'x-forwarded-for': '203.0.113.5' }, socket: sock }, proxy), '203.0.113.5');
+    assert.equal(getClientIp({ headers: { 'x-forwarded-for': '1.2.3.4, 203.0.113.5' }, socket: sock }, proxy), '203.0.113.5');
+    assert.equal(getClientIp({ headers: { 'x-real-ip': '203.0.113.7', 'x-forwarded-for': '1.2.3.4, 203.0.113.5' }, socket: sock }, proxy), '203.0.113.7');
     // Directly exposed: client-supplied headers are ignored.
     assert.equal(getClientIp({ headers: { 'x-forwarded-for': '203.0.113.5', 'x-real-ip': '203.0.113.6' }, socket: sock }, {}), '127.0.0.1');
     // Junk values never become rate-limit keys.

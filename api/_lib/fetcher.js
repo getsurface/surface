@@ -223,6 +223,7 @@ function requestOnce(url, ctx, { rejectUnauthorized = true, timeoutMs = ctx.hopT
       // SNI: the host name; never an IP literal (not permitted by RFC 6066).
       options.servername = net.isIP(host) ? '' : host;
       options.rejectUnauthorized = rejectUnauthorized;
+      if (ctx.tlsCa) options.ca = ctx.tlsCa; // test hook, local only (see fetchSnapshot)
     }
 
     let settled = false;
@@ -330,10 +331,14 @@ function requestOnce(url, ctx, { rejectUnauthorized = true, timeoutMs = ctx.hopT
 }
 
 /** One hop with the certificate retry: verified first, unverified once on a cert error. */
-async function fetchHop(url, ctx) {
+async function fetchHop(url, ctx, hop) {
   try {
     return { ...(await requestOnce(url, ctx, { rejectUnauthorized: true })), certError: null };
   } catch (err) {
+    // The visitor asked for http:// and we only tried HTTPS first. A bad
+    // certificate there (often a shared host's default site) must not replace
+    // the page they asked for: let the caller fall back to plain HTTP.
+    if (ctx.httpInput && hop === 0) throw err;
     if (url.protocol === 'https:' && isCertError(err)) {
       const res = await requestOnce(url, ctx, { rejectUnauthorized: false });
       return { ...res, certError: err.code };
@@ -353,12 +358,13 @@ async function runChain(startUrl, ctx) {
   }
   const redirects = [];
   const visited = new Set([current.href]);
+  const seen = new Set([current.href]); // Location values as sent, query included
   const cookies = new Map();
 
   for (let hop = 0; ; hop++) {
     let res;
     try {
-      res = await fetchHop(current, ctx);
+      res = await fetchHop(current, ctx, hop);
     } catch (err) {
       if (err && typeof err === 'object') {
         try {
@@ -389,11 +395,15 @@ async function runChain(startUrl, ctx) {
     // Re-validate scheme, port, host and IP literal for the next hop. Its DNS
     // answer is validated at connect time by safeLookup.
     const safeNext = validateUrl(next, { redirect: true });
-    // Drop the query on every hop, as for the user's input: a redirect must not
-    // turn Surface into a relay that sends chosen query strings to other sites.
-    safeNext.search = '';
     safeNext.hash = '';
-    if (visited.has(safeNext.href)) return final('loop');
+    const asSent = safeNext.href;
+    // A redirect to another host loses its query, so Surface can't be used to
+    // relay chosen query strings to other sites. Same-host hops keep it
+    // (`/` -> `/?lang=en` is common and isn't a loop).
+    if (safeNext.host !== current.host) safeNext.search = '';
+    if (seen.has(asSent)) return final('loop');
+    if (visited.has(safeNext.href)) return final('unfollowable');
+    seen.add(asSent);
     redirects.push({ from: current.href, to: safeNext.href, status: res.status });
     visited.add(safeNext.href);
     current = safeNext;
@@ -446,16 +456,20 @@ export async function fetchSnapshot(url, input, opts = {}) {
     budgetMs: Math.min(opts.budgetMs ?? LIMITS.budgetMs, LIMITS.budgetMs),
     maxRedirects: Math.min(opts.maxRedirects ?? LIMITS.maxRedirects, LIMITS.maxRedirects),
     probePort: allowPrivate() ? (opts.probePort ?? 80) : 80, // test hook, local only
+    tlsCa: allowPrivate() ? (opts.tlsCa ?? null) : null, // test hook, local only
   };
   const startUrl = validateUrl(url);
   // HTTPS first, even when the input says http://: a site that serves both
   // must not be reported as having no HTTPS. runChainWithFallback still falls
   // back to plain HTTP on a connection failure, and the probe below checks
   // what plain HTTP does.
-  if (startUrl.protocol === 'http:') startUrl.protocol = 'https:';
+  const httpInput = startUrl.protocol === 'http:';
+  if (httpInput) startUrl.protocol = 'https:';
   const started = Date.now();
   const controller = new AbortController();
   const ctx = {
+    httpInput,
+    tlsCa: cfg.tlsCa,
     lookup: typeof opts.dnsLookup === 'function' ? createSafeLookup(opts.dnsLookup) : safeLookup,
     deadline: started + cfg.budgetMs,
     hopTimeoutMs: cfg.hopTimeoutMs,
