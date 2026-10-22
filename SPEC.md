@@ -5,7 +5,7 @@ backend makes a few ordinary requests to that site, reads what the server sends
 back (headers, banners, cookies, certificate), and returns a plain-language
 report with fixes. It never probes, stresses, logs in, or sends attack payloads.
 
-Runtime: Node 22, ESM (`"type": "module"`), **zero npm dependencies** (Node
+Runtime: Node 22+ (production runs Node 24 on Vercel), ESM (`"type": "module"`), **zero npm dependencies** (Node
 built-ins only). Deploy target: Vercel (static `index.html` + `assets/` and one
 serverless function `api/scan.js`). Local dev: `node server.js`.
 

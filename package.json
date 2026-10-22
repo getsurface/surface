@@ -5,7 +5,7 @@
   "description": "Passive website exposure checker: paste a URL, see what the server reveals.",
   "type": "module",
   "engines": {
-    "node": "22.x"
+    "node": "24.x"
   },
   "scripts": {
     "dev": "node server.js",
