@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "description": "Passive website exposure checker: paste a URL, see what the server reveals.",
+  "license": "MIT",
   "type": "module",
   "engines": {
     "node": "24.x"

@@ -83,3 +83,7 @@ Other websites can't run scans through their visitors' browsers: a request witho
 ## Security
 
 Found a way around the protections above? Please report it privately, see [SECURITY.md](SECURITY.md).
+
+## License
+
+[MIT](LICENSE). The bundled Inter and Geist Mono fonts are under the SIL Open Font License 1.1 (see `assets/fonts/`).
