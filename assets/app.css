@@ -1,6 +1,12 @@
 /* Surface — all styles. Layout concept: centered 1100px editorial SaaS canvas,
    hairline-bordered cards, one blue accent, scan report below the hero input. */
 
+/* ---------- FONTS (self-hosted, SIL OFL 1.1, see assets/fonts/) ---------- */
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 100 900; font-display: swap; src: url('/assets/fonts/inter-latin-var.woff2') format('woff2'); }
+@font-face { font-family: 'Geist Mono'; font-style: normal; font-weight: 400; font-display: swap; src: url('/assets/fonts/geist-mono-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Geist Mono'; font-style: normal; font-weight: 500; font-display: swap; src: url('/assets/fonts/geist-mono-latin-500-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Geist Mono'; font-style: normal; font-weight: 600; font-display: swap; src: url('/assets/fonts/geist-mono-latin-600-normal.woff2') format('woff2'); }
+
 /* ---------- TOKENS ---------- */
 :root {
   --canvas: #ffffff;
@@ -810,3 +816,10 @@ footer {
   .report[aria-busy="true"] .seg,
   .report[aria-busy="true"] .report-head { transition: none; }
 }
+
+/* ---------- 404 ---------- */
+.notfound { min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; text-align: center; padding: 48px 0; }
+.notfound h1 { font-family: var(--display); font-size: clamp(32px, 6vw, 48px); font-weight: 600; letter-spacing: -0.03em; margin: 8px 0 12px; }
+.notfound .sub { color: var(--steel); margin: 0 0 28px; }
+.notfound-code { font-family: var(--num); font-size: 15px; color: var(--steel); letter-spacing: 0.08em; margin: 0; }
+.notfound .btn-cta { text-decoration: none; display: inline-flex; align-items: center; }

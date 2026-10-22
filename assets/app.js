@@ -737,7 +737,8 @@
       if (controller) controller.abort();
     }, CLIENT_TIMEOUT_MS);
 
-    var url = '/api/scan?url=' + encodeURIComponent(value);
+    // The server ignores the query and fragment; don't send them (they'd land in request logs).
+    var url = '/api/scan?url=' + encodeURIComponent(value.split(/[?#]/)[0]);
     var opts = {
       method: 'GET',
       // X-Surface marks the request as coming from this page; the API refuses others.

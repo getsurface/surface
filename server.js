@@ -15,8 +15,8 @@ const INDEX_FILE = path.join(ROOT, 'index.html');
 
 export const SECURITY_HEADERS = Object.freeze({
   'Content-Security-Policy':
-    "default-src 'none'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; " +
-    "font-src https://fonts.gstatic.com; img-src data:; connect-src 'self'; " +
+    "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; " +
+    "img-src data:; connect-src 'self'; " +
     "frame-ancestors 'none'; base-uri 'none'; form-action 'self'; " +
     "require-trusted-types-for 'script'; trusted-types 'none'",
   'X-Frame-Options': 'DENY',
@@ -76,6 +76,21 @@ async function sendFile(req, res, file) {
   res.end(req.method === 'HEAD' ? undefined : body);
 }
 
+async function sendNotFound(req, res) {
+  let body;
+  try {
+    body = await readFile(path.join(ROOT, '404.html'));
+  } catch {
+    return sendText(req, res, 404, 'Not found');
+  }
+  res.statusCode = 404;
+  for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.setHeader(k, v);
+  res.setHeader('Content-Type', CONTENT_TYPES['.html']);
+  res.setHeader('Content-Length', body.length);
+  res.setHeader('Cache-Control', 'no-cache');
+  res.end(req.method === 'HEAD' ? undefined : body);
+}
+
 /** "/assets/<rel>" -> absolute file path inside assets/, or null when unsafe. */
 export async function resolveAsset(pathname) {
   if (!pathname.startsWith('/assets/')) return null;
@@ -116,12 +131,14 @@ export function createDevServer() {
         return sendText(req, res, 405, 'Method not allowed', { Allow: 'GET, HEAD' });
       }
       if (pathname === '/' || pathname === '/index.html') return await sendFile(req, res, INDEX_FILE);
+      if (pathname === '/robots.txt') return await sendFile(req, res, path.join(ROOT, 'robots.txt'));
+      if (pathname === '/.well-known/security.txt') return await sendFile(req, res, path.join(ROOT, '.well-known', 'security.txt'));
       if (pathname.startsWith('/assets/')) {
         const file = await resolveAsset(pathname);
         if (!file) return sendText(req, res, 404, 'Not found');
         return await sendFile(req, res, file);
       }
-      return sendText(req, res, 404, 'Not found');
+      return await sendNotFound(req, res);
     } catch (err) {
       console.error('[surface] dev server error:', err);
       if (!res.headersSent) sendText(req, res, 500, 'Internal error');
