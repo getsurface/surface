@@ -16,147 +16,190 @@
   //   no CSP, no X-Frame-Options, no Referrer-Policy, no Permissions-Policy,
   //   Set-Cookie: PHPSESSID (Secure; HttpOnly), theme (Secure; SameSite=Lax),
   //   http:// -> 301 to https, valid Let's Encrypt cert with 84 days left.
-  // Scoring: 2 crit x 20 + 2 warn x 8 + 5 info x 1 = 61 -> "high" (>= 55).
+  // Scoring: 4 warn x 8 + 5 info x 1 = 37 -> "moderate" (25-54).
+  // test/sample.test.js fails when this drifts from analyze(); regenerate it then.
   // ---------------------------------------------------------------------------
   var SAMPLE_REPORT = {
-    target: {
-      input: 'example.com',
-      url: 'https://example.com/',
-      host: 'example.com',
-      status: 200,
-      timingMs: 312,
-      redirects: 0,
-      scannedAt: '2026-10-22T15:20:00.000Z'
+    "target": {
+      "input": "example.com",
+      "url": "https://example.com/",
+      "host": "example.com",
+      "status": 200,
+      "timingMs": 312,
+      "redirects": 0,
+      "scannedAt": "2026-10-22T15:20:00.000Z"
     },
-    score: 61,
-    level: 'high',
-    counts: { total: 18, crit: 2, warn: 2, info: 5, ok: 9 },
-    findings: [
+    "score": 37,
+    "level": "moderate",
+    "counts": {
+      "total": 18,
+      "crit": 0,
+      "warn": 4,
+      "info": 5,
+      "ok": 9
+    },
+    "findings": [
       {
-        id: 'server-header', category: 'versions', severity: 'crit',
-        title: 'Server version exposed',
-        desc: 'The exact version is public, so anyone can look up known holes for it.',
-        evidence: 'Server: nginx/1.18.0',
-        fix: 'Hide the version number. Nginx: add `server_tokens off;` to the http block. Apache: set `ServerTokens Prod` and `ServerSignature Off`.'
+        "id": "server-header",
+        "category": "versions",
+        "severity": "warn",
+        "title": "Server version exposed",
+        "desc": "The exact version is public, so anyone can look up known security holes for it.",
+        "evidence": "Server: nginx/1.18.0",
+        "fix": "Hide the version number. Nginx: add `server_tokens off;` to the `http` block; Apache: set `ServerTokens Prod` and `ServerSignature Off`, then reload. IIS on Windows Server 2019 or later: add `<security><requestFiltering removeServerHeader=\"true\" /></security>` under `<system.webServer>` in web.config; older IIS needs a URL Rewrite outbound rule that blanks `RESPONSE_SERVER`."
       },
       {
-        id: 'powered-by', category: 'versions', severity: 'crit',
-        title: 'Backend version leaked',
-        desc: 'Every response names your PHP version, which points straight at its known bugs.',
-        evidence: 'X-Powered-By: PHP/7.4.3',
-        fix: 'Turn the banner off. PHP: set `expose_php = Off` in php.ini. Express: `app.disable(\'x-powered-by\')`. Next.js: `poweredByHeader: false`.'
+        "id": "powered-by",
+        "category": "versions",
+        "severity": "warn",
+        "title": "Backend version leaked",
+        "desc": "The exact backend version is public, so anyone can check it against lists of known exploits.",
+        "evidence": "X-Powered-By: PHP/7.4.3",
+        "fix": "Remove the header. PHP: set `expose_php = Off` in php.ini; Express: call `app.disable('x-powered-by')`; Next.js: set `poweredByHeader: false` in next.config.js. On IIS, add `<remove name=\"X-Powered-By\" />` under `customHeaders` in web.config."
       },
       {
-        id: 'csp', category: 'headers', severity: 'warn',
-        title: 'No content security policy',
-        desc: 'Nothing limits which scripts can run on your page if someone slips one in.',
-        evidence: 'CSP: —',
-        fix: 'Start with a strict policy such as `default-src \'self\'` and loosen it only where needed. Try it first as `Content-Security-Policy-Report-Only`.'
+        "id": "csp",
+        "category": "headers",
+        "severity": "warn",
+        "title": "No content security policy",
+        "desc": "Nothing limits which scripts can run on your pages, so a single injected script can steal data or sessions.",
+        "evidence": "CSP: —",
+        "fix": "Start with `Content-Security-Policy: default-src 'self'` and add the domains your pages really load from. Nginx: `add_header Content-Security-Policy \"default-src 'self'\" always;`; Apache: `Header always set Content-Security-Policy \"default-src 'self'\"`; Next.js: return it from `headers()` in next.config.js. Try it as `Content-Security-Policy-Report-Only` first so nothing breaks."
       },
       {
-        id: 'clickjacking', category: 'headers', severity: 'warn',
-        title: 'Clickjacking protection missing',
-        desc: 'Another site can load your page in a frame and trick visitors into clicking.',
-        evidence: 'X-Frame-Options: —',
-        fix: 'Send `X-Frame-Options: DENY`, or add `frame-ancestors \'none\'` to your content security policy.'
+        "id": "clickjacking",
+        "category": "headers",
+        "severity": "warn",
+        "title": "Clickjacking protection missing",
+        "desc": "Another site can load your page in a hidden frame and trick visitors into clicking things they can't see.",
+        "evidence": "X-Frame-Options: —",
+        "fix": "Add `Content-Security-Policy: frame-ancestors 'self'`, or `X-Frame-Options: SAMEORIGIN` for older browsers. Nginx: `add_header X-Frame-Options SAMEORIGIN always;`; Apache: `Header always set X-Frame-Options SAMEORIGIN`; Express: `res.set('X-Frame-Options', 'SAMEORIGIN')`. Next.js: return it from `headers()` in next.config.js."
       },
       {
-        id: 'referrer-policy', category: 'headers', severity: 'info',
-        title: 'No referrer policy',
-        desc: 'Browsers already use a safe default, but setting one yourself makes it explicit.',
-        evidence: 'Referrer-Policy: —',
-        fix: 'Send `Referrer-Policy: strict-origin-when-cross-origin`.'
+        "id": "referrer-policy",
+        "category": "headers",
+        "severity": "info",
+        "title": "No referrer policy",
+        "desc": "Modern browsers default to a safe setting that hides your full page addresses from other sites, so this is low risk.",
+        "evidence": "Referrer-Policy: —",
+        "fix": "Set it explicitly so older browsers behave the same: `Referrer-Policy: strict-origin-when-cross-origin`. Nginx: `add_header Referrer-Policy strict-origin-when-cross-origin always;`; Apache: `Header always set Referrer-Policy strict-origin-when-cross-origin`."
       },
       {
-        id: 'permissions-policy', category: 'headers', severity: 'info',
-        title: 'No permissions policy',
-        desc: 'Your page doesn\'t say which browser features, like camera or location, it never uses.',
-        evidence: 'Permissions-Policy: —',
-        fix: 'Switch off what you don\'t use, for example `Permissions-Policy: camera=(), microphone=(), geolocation=()`.'
+        "id": "permissions-policy",
+        "category": "headers",
+        "severity": "info",
+        "title": "No permissions policy",
+        "desc": "You haven't limited which browser features, such as camera or location, your pages and embeds may ask for.",
+        "evidence": "Permissions-Policy: —",
+        "fix": "Switch off features you don't use, for example `Permissions-Policy: camera=(), microphone=(), geolocation=()`. Nginx: `add_header Permissions-Policy \"camera=(), microphone=(), geolocation=()\" always;`; Apache: `Header always set Permissions-Policy \"camera=(), microphone=(), geolocation=()\"`."
       },
       {
-        id: 'cookie-httponly', category: 'cookies', severity: 'info',
-        title: 'Some cookies readable by scripts',
-        desc: 'A non-session cookie can be read by page scripts. Usually fine for settings like a theme.',
-        evidence: 'theme',
-        fix: 'Add `HttpOnly` to any cookie your page scripts don\'t need to read.'
+        "id": "cookie-httponly",
+        "category": "cookies",
+        "severity": "info",
+        "title": "Some cookies readable by scripts",
+        "desc": "Scripts can read some cookies, which is fine for preferences but not for anything that identifies a visitor.",
+        "evidence": "theme",
+        "fix": "Add `HttpOnly` to every cookie your own JavaScript doesn't need to read."
       },
       {
-        id: 'cookie-samesite', category: 'cookies', severity: 'info',
-        title: 'Cookies without SameSite',
-        desc: 'Browsers pick a default, but older ones may send these cookies on cross-site requests.',
-        evidence: 'PHPSESSID',
-        fix: 'Add `SameSite=Lax` to each cookie, or `SameSite=Strict` for ones only your own pages need.'
+        "id": "cookie-samesite",
+        "category": "cookies",
+        "severity": "info",
+        "title": "Cookies without SameSite",
+        "desc": "Chrome and Edge treat these as Lax by default but other browsers may not, so setting it yourself keeps behavior the same everywhere.",
+        "evidence": "PHPSESSID",
+        "fix": "Add `SameSite=Lax` to your cookies, or `SameSite=Strict` for admin sessions. PHP: `session.cookie_samesite = \"Lax\"`; Express: `cookie: { sameSite: 'lax' }`; nginx 1.19.3+: put all flags for a cookie on one line, such as `proxy_cookie_flags PHPSESSID secure httponly samesite=lax;` (drop `httponly` if your own JavaScript reads it), because nginx applies only the first line that matches a cookie."
       },
       {
-        id: 'hosting', category: 'disclosure', severity: 'info',
-        title: 'Hosting provider identified',
-        desc: 'Where your site is hosted is visible from the response. Normal and rarely a problem.',
-        evidence: 'via: Cloudflare',
-        fix: 'Nothing to change. Most CDNs announce themselves. Just keep your origin server\'s own address private.'
+        "id": "hosting",
+        "category": "disclosure",
+        "severity": "info",
+        "title": "Hosting provider identified",
+        "desc": "Anyone can see that Cloudflare serves your site, which is normal and gives attackers only a small hint.",
+        "evidence": "CF-Ray: 8d2f1c3b9a7e4f21-FRA",
+        "fix": "No action needed. Make sure your origin server only accepts traffic from Cloudflare, so nobody can bypass it by finding the server's own address."
       },
       {
-        id: 'fingerprints', category: 'versions', severity: 'ok',
-        title: 'No CMS fingerprints',
-        desc: 'No headers give away which content management system you use.',
-        evidence: 'CMS headers: —',
-        fix: 'Nothing to change. Keep generator and CMS headers switched off.'
+        "id": "fingerprints",
+        "category": "versions",
+        "severity": "ok",
+        "title": "No CMS fingerprints",
+        "desc": "Your responses don't carry headers that point to a specific CMS or framework.",
+        "evidence": "CMS headers: —",
+        "fix": "Nothing to change."
       },
       {
-        id: 'https', category: 'transport', severity: 'ok',
-        title: 'Served over HTTPS',
-        desc: 'Visitors reach your page over an encrypted connection.',
-        evidence: 'TLS: TLSv1.3',
-        fix: 'Nothing to change.'
+        "id": "https",
+        "category": "transport",
+        "severity": "ok",
+        "title": "Served over HTTPS",
+        "desc": "Pages travel encrypted, so nobody between your visitors and your server can read or change them.",
+        "evidence": "TLS: TLSv1.3",
+        "fix": "Nothing to change. Keep certificate renewal automatic so HTTPS never lapses."
       },
       {
-        id: 'http-redirect', category: 'transport', severity: 'ok',
-        title: 'HTTP redirects to HTTPS',
-        desc: 'Anyone who types the plain address is sent to the secure one.',
-        evidence: '301 → https',
-        fix: 'Nothing to change. Keep the redirect permanent (`301` or `308`).'
+        "id": "http-redirect",
+        "category": "transport",
+        "severity": "ok",
+        "title": "HTTP redirects to HTTPS",
+        "desc": "Visitors who type your address without https:// are sent straight to the secure version.",
+        "evidence": "301 → https",
+        "fix": "Nothing to change."
       },
       {
-        id: 'hsts', category: 'transport', severity: 'ok',
-        title: 'HSTS enabled',
-        desc: 'Browsers remember to use HTTPS for your site, even if a link says http.',
-        evidence: 'max-age=31536000; includeSubDomains',
-        fix: 'Nothing to change. Keep `max-age` at a year or more.'
+        "id": "hsts",
+        "category": "transport",
+        "severity": "ok",
+        "title": "HSTS enabled",
+        "desc": "Browsers remember to use HTTPS for your site, even when someone types the plain address.",
+        "evidence": "max-age=31536000; includeSubDomains",
+        "fix": "Nothing to change. To have browsers enforce HTTPS before the very first visit, add `preload` (with a `max-age` of at least 31536000) and submit your domain at hstspreload.org."
       },
       {
-        id: 'certificate', category: 'transport', severity: 'ok',
-        title: 'Certificate valid',
-        desc: 'Browsers trust your certificate and it isn\'t close to expiring.',
-        evidence: '84 days left · Let\'s Encrypt',
-        fix: 'Nothing to change. Make sure renewal stays automatic.'
+        "id": "certificate",
+        "category": "transport",
+        "severity": "ok",
+        "title": "Certificate valid",
+        "desc": "Browsers trust your certificate and it has plenty of time left before it expires.",
+        "evidence": "84 days left · Let's Encrypt",
+        "fix": "Nothing to change. Keep automatic renewal on so it never lapses."
       },
       {
-        id: 'nosniff', category: 'headers', severity: 'ok',
-        title: 'MIME sniffing blocked',
-        desc: 'Browsers treat your files as the type you declare, not what they guess.',
-        evidence: 'X-Content-Type-Options: nosniff',
-        fix: 'Nothing to change.'
+        "id": "nosniff",
+        "category": "headers",
+        "severity": "ok",
+        "title": "MIME sniffing blocked",
+        "desc": "Browsers use the file types you declare instead of guessing.",
+        "evidence": "X-Content-Type-Options: nosniff",
+        "fix": "Nothing to change."
       },
       {
-        id: 'cookie-secure', category: 'cookies', severity: 'ok',
-        title: 'Cookies marked Secure',
-        desc: 'Your cookies only travel over encrypted connections.',
-        evidence: '2 cookies, all Secure',
-        fix: 'Nothing to change. Add `Secure` to any new cookie too.'
+        "id": "cookie-secure",
+        "category": "cookies",
+        "severity": "ok",
+        "title": "Cookies marked Secure",
+        "desc": "Your cookies are only ever sent over encrypted connections.",
+        "evidence": "2 cookies, all Secure",
+        "fix": "Nothing to change."
       },
       {
-        id: 'cors', category: 'cors', severity: 'ok',
-        title: 'No cross-origin access',
-        desc: 'Other websites can\'t read your responses from a visitor\'s browser.',
-        evidence: 'ACAO: —',
-        fix: 'Nothing to change.'
+        "id": "cors",
+        "category": "cors",
+        "severity": "ok",
+        "title": "No cross-origin access",
+        "desc": "Your page sends no CORS headers to a normal request, so other websites can't read it from a visitor's browser.",
+        "evidence": "ACAO: —",
+        "fix": "Nothing to change."
       },
       {
-        id: 'debug-headers', category: 'disclosure', severity: 'ok',
-        title: 'No debug headers',
-        desc: 'No profiler tokens or internal host names show up in the response.',
-        evidence: 'X-Debug-Token: —',
-        fix: 'Nothing to change.'
+        "id": "debug-headers",
+        "category": "disclosure",
+        "severity": "ok",
+        "title": "No debug headers",
+        "desc": "Responses don't carry debug tokens or the names of internal servers.",
+        "evidence": "X-Debug-Token: —",
+        "fix": "Nothing to change."
       }
     ]
   };

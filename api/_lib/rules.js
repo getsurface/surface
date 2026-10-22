@@ -8,17 +8,32 @@
 const MAX_EVIDENCE = 64;
 const ABSENT = "—";
 
-const SENSITIVE_COOKIE = /sess|sid|auth|token|jwt|login|logged|remember|csrf/i;
+// "sid" only as its own word ("sid", "connect.sid"), so "sidebar_state" isn't a session cookie.
+const SENSITIVE_COOKIE = /sess|(?:^|[^a-z])sid(?![a-z])|auth|token|jwt|login|logged|remember|csrf/i;
 // CSRF cookies that front-end code is designed to read (Angular, Laravel, Django).
 const SCRIPT_READABLE_COOKIE = /^(?:xsrf-token|csrftoken)$/i;
 // Linear-time on hostile input: /\d+\.\d+/ is quadratic on long digit runs.
 const HAS_VERSION = [/\d\.\d/, /\/ *\d/];
 const NONCE_OR_HASH = /'(?:nonce-|sha256-|sha384-|sha512-)|'strict-dynamic'/i;
+const STRICT_DYNAMIC = /'strict-dynamic'/i;
 const PRIVATE_IPV4 =
   /(?<![\d.])(?:10\.\d{1,3}|127\.\d{1,3}|192\.168|172\.(?:1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}(?!\d|\.\d)/;
 const INTERNAL_NAME =
-  /\.(?:internal|local|lan)(?![a-z0-9.-])|(?<![a-z0-9-])localhost(?![a-z0-9-])|(?<![a-z0-9])ip-10-/i;
+  /\.(?:internal|local|lan)(?![a-z0-9.-])|(?<![a-z0-9-])localhost(?![a-z0-9-])|(?<![a-z0-9])ip-(?:10|172-(?:1[6-9]|2\d|3[01])|192-168)-/i;
 const HSTS_MIN_AGE = 15552000; // 180 days
+const HSTS_PRELOAD_MIN_AGE = 31536000; // one year, required by hstspreload.org
+const DAY_MS = 86400000;
+// Valid Referrer-Policy tokens; browsers use the last one they recognise.
+const REFERRER_POLICIES = new Set([
+  "no-referrer",
+  "no-referrer-when-downgrade",
+  "same-origin",
+  "origin",
+  "strict-origin",
+  "origin-when-cross-origin",
+  "strict-origin-when-cross-origin",
+  "unsafe-url",
+]);
 // A CSP source that allows any host: "*" or a bare scheme such as "https:".
 const WIDE_SOURCE = /^(?:\*|[a-z][a-z0-9+.-]*:)$/;
 const REDIRECT_STOPS = new Set(["limit", "loop", "unfollowable"]);
@@ -30,6 +45,10 @@ function isWideSourceList(sources) {
 const HEADER_NAMES = {
   "x-aspnet-version": "X-AspNet-Version",
   "x-aspnetmvc-version": "X-AspNetMvc-Version",
+  "cf-ray": "CF-Ray",
+  "x-nf-request-id": "X-NF-Request-ID",
+  "x-github-request-id": "X-GitHub-Request-Id",
+  "x-shopid": "X-ShopId",
 };
 
 // ---------------------------------------------------------------- helpers
@@ -158,12 +177,39 @@ function parseCookie(raw) {
     // Only the three valid values count; browsers ignore anything else.
     sameSite: ["lax", "strict", "none"].includes(sameSiteRaw) ? sameSiteRaw : null,
     sensitive: SENSITIVE_COOKIE.test(name) && !SCRIPT_READABLE_COOKIE.test(name),
+    maxAge: attrs.has("max-age") ? attrs.get("max-age") : null,
+    expires: attrs.has("expires") ? attrs.get("expires") : null,
   };
+}
+
+/**
+ * True for a Set-Cookie that deletes the cookie instead of setting it
+ * (RFC 6265: Max-Age <= 0, or else Expires in the past). `now` is called only
+ * when an Expires date has to be compared.
+ */
+function isDeletion(cookie, now) {
+  if (cookie.maxAge !== null && /^-?\d+$/.test(cookie.maxAge)) {
+    // A valid Max-Age wins over Expires.
+    return Number(cookie.maxAge) <= 0;
+  }
+  if (cookie.expires === null) return false;
+  const expires = Date.parse(cookie.expires);
+  return Number.isFinite(expires) && expires < now();
+}
+
+/** Reference time for cookie expiry: the scan time, or the clock if the snapshot has none. */
+function referenceTime(snapshot) {
+  const scanned = typeof snapshot.scannedAt === "string" ? Date.parse(snapshot.scannedAt) : NaN;
+  return () => (Number.isFinite(scanned) ? scanned : Date.now());
 }
 
 function readCookies(snapshot) {
   const list = Array.isArray(snapshot.setCookies) ? snapshot.setCookies : [];
-  return list.filter((c) => typeof c === "string" && c.trim() !== "").map(parseCookie);
+  const now = referenceTime(snapshot);
+  return list
+    .filter((c) => typeof c === "string" && c.trim() !== "")
+    .map(parseCookie)
+    .filter((cookie) => !isDeletion(cookie, now));
 }
 
 function readUrl(snapshot) {
@@ -242,6 +288,7 @@ const PLATFORM_SERVER_NAMES = new Set([
   "cloudfront",
   "awselb",
   "elb",
+  "fly", // Fly.io's proxy: "Fly/51ee4ef9 (2024-11-06)"
 ]);
 
 function platformServerName(value) {
@@ -270,18 +317,18 @@ function serverHeader(snapshot) {
   }
   if (platformServerName(value)) {
     return make(
-      "info",
-      "Server software named",
-      "Visitors can see the name of the service in front of your site, but nothing about your own server.",
+      "ok",
+      "Hosting platform named",
+      "Only your hosting platform's name is visible, nothing about your own software.",
       "Nothing to change. Your hosting or CDN provider sets this name and it can't be removed."
     );
   }
   if (hasVersion(value)) {
     return make(
-      "crit",
+      "warn",
       "Server version exposed",
       "The exact version is public, so anyone can look up known security holes for it.",
-      "Hide the version number. Nginx: add `server_tokens off;` to the `http` block; Apache: set `ServerTokens Prod` and `ServerSignature Off`, then reload. IIS 10+: set `removeServerHeader=\"true\"` on `requestFiltering` in web.config."
+      "Hide the version number. Nginx: add `server_tokens off;` to the `http` block; Apache: set `ServerTokens Prod` and `ServerSignature Off`, then reload. IIS on Windows Server 2019 or later: add `<security><requestFiltering removeServerHeader=\"true\" /></security>` under `<system.webServer>` in web.config; older IIS needs a URL Rewrite outbound rule that blanks `RESPONSE_SERVER`."
     );
   }
   return make(
@@ -310,14 +357,14 @@ function poweredBy(snapshot) {
   }
   if (hasVersion(value)) {
     return make(
-      "crit",
+      "warn",
       "Backend version leaked",
       "The exact backend version is public, so anyone can check it against lists of known exploits.",
       fix
     );
   }
   return make(
-    "warn",
+    "info",
     "Backend framework named",
     "Your responses name the framework behind your site, which tells attackers which exploits to try first.",
     fix
@@ -333,7 +380,7 @@ function fingerprints(snapshot) {
   if (headers["x-aspnet-version"] !== undefined) {
     add(
       "x-aspnet-version",
-      "crit",
+      "warn",
       "ASP.NET version exposed",
       "The exact .NET version is public, so anyone can look up known security holes for it.",
       headerEvidence("x-aspnet-version", headers["x-aspnet-version"]),
@@ -343,7 +390,7 @@ function fingerprints(snapshot) {
   if (headers["x-aspnetmvc-version"] !== undefined) {
     add(
       "x-aspnetmvc-version",
-      "crit",
+      "warn",
       "ASP.NET MVC version exposed",
       "The exact ASP.NET MVC version is public, so anyone can look up known security holes for it.",
       headerEvidence("x-aspnetmvc-version", headers["x-aspnetmvc-version"]),
@@ -357,7 +404,7 @@ function fingerprints(snapshot) {
     if (hasVersion(generator)) {
       add(
         "x-generator",
-        "crit",
+        "warn",
         "CMS or site builder version exposed",
         "Your pages announce the exact version of the software that builds them, so anyone can look up its known holes.",
         headerEvidence("x-generator", generator),
@@ -366,7 +413,7 @@ function fingerprints(snapshot) {
     } else {
       add(
         "x-generator",
-        "warn",
+        "info",
         "CMS or site builder named",
         "Your pages name the software that builds them, which tells attackers which exploits to try.",
         headerEvidence("x-generator", generator),
@@ -483,7 +530,26 @@ function httpRedirect(snapshot) {
           : NOTHING_TO_CHANGE
       );
     }
-    case "serves-http":
+    case "serves-http": {
+      const location = typeof httpProbe.location === "string" ? httpProbe.location.trim() : "";
+      if (status !== null && status >= 300 && status < 400 && /^http:\/\//i.test(location)) {
+        return make(
+          "info",
+          "HTTP redirect doesn't go straight to HTTPS",
+          "Plain HTTP sends visitors to another unencrypted address first, so that extra hop can still be read or altered on the way.",
+          `${status} → ${location}`,
+          "Point the port 80 redirect straight at the final `https://` address. Nginx: `return 301 https://$host$request_uri;`; Apache: `RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]`."
+        );
+      }
+      if (status !== null && status >= 400) {
+        return make(
+          "info",
+          "Plain HTTP answers with an error",
+          "Visitors who type your address without https:// get an error page instead of your site.",
+          `HTTP ${status}`,
+          "Redirect every plain HTTP request to HTTPS. Nginx: `return 301 https://$host$request_uri;` in the port 80 server block; Apache: `RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]`. On Cloudflare, turn on Always Use HTTPS."
+        );
+      }
       return make(
         "warn",
         "Plain HTTP still works",
@@ -491,6 +557,7 @@ function httpRedirect(snapshot) {
         status === null ? "HTTP: page served" : `HTTP ${status}`,
         "Redirect every plain HTTP request to HTTPS. Nginx: `return 301 https://$host$request_uri;` in the port 80 server block; Apache: `RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]`. On Cloudflare, turn on Always Use HTTPS."
       );
+    }
     case "no-http":
       return make(
         "ok",
@@ -526,24 +593,42 @@ function hsts(snapshot) {
   const match = /(?:^|;)\s*max-age\s*=\s*"?(\d+)"?\s*(?=;|$)/i.exec(first);
   const maxAge = match ? Number(match[1]) : null;
   const subdomains = /(?:^|;)\s*includesubdomains\s*(?=;|$)/i.test(first);
+  const preload = /(?:^|;)\s*preload\s*(?=;|$)/i.test(first);
 
-  if (maxAge === null || maxAge < HSTS_MIN_AGE) {
+  if (maxAge === null) {
+    return make(
+      "warn",
+      "HSTS max-age missing",
+      "Browsers ignore an HSTS header without a valid max-age, so HTTPS isn't actually enforced.",
+      `max-age: ${ABSENT}`,
+      "Send a valid `max-age`, for example `Strict-Transport-Security: max-age=31536000`. The value must be a whole number of seconds, with `;` between directives."
+    );
+  }
+  if (maxAge < HSTS_MIN_AGE) {
     return make(
       "warn",
       "HSTS max-age too short",
       "Browsers forget to insist on HTTPS after a short time, which reopens the gap HSTS is meant to close.",
-      maxAge === null ? `max-age: ${ABSENT}` : `max-age=${maxAge}`,
+      `max-age=${maxAge}`,
       "Raise `max-age` to at least 15552000 (180 days); 31536000 (one year) is the usual choice. Keep it low only while testing, then raise it once HTTPS works everywhere."
     );
+  }
+  let fix;
+  if (preload && subdomains && maxAge >= HSTS_PRELOAD_MIN_AGE) {
+    fix = "Nothing to change. Your header meets the HSTS preload list rules, so check your domain's status at hstspreload.org.";
+  } else if (preload) {
+    fix = "Nothing to change for HSTS itself. The preload list also requires `includeSubDomains` and a `max-age` of at least 31536000, so add what's missing before submitting at hstspreload.org.";
+  } else if (subdomains) {
+    fix = "Nothing to change. To have browsers enforce HTTPS before the very first visit, add `preload` (with a `max-age` of at least 31536000) and submit your domain at hstspreload.org.";
+  } else {
+    fix = "Nothing to change. Once every subdomain serves HTTPS, add `includeSubDomains` to cover them too.";
   }
   return make(
     "ok",
     "HSTS enabled",
     "Browsers remember to use HTTPS for your site, even when someone types the plain address.",
     `max-age=${maxAge}${subdomains ? "; includeSubDomains" : ""}`,
-    subdomains
-      ? "Nothing to change. To have browsers enforce HTTPS before the very first visit, add `preload` and submit your domain at hstspreload.org."
-      : "Nothing to change. Once every subdomain serves HTTPS, add `includeSubDomains` to cover them too."
+    fix
   );
 }
 
@@ -581,6 +666,19 @@ const UNTRUSTED_DEFAULT = {
   fix: "Install a certificate from a public authority, such as a free one from Let's Encrypt, that covers this host name and includes the full chain.",
 };
 
+/**
+ * Day thresholds for "expires soon" (warn) and "expires in N days" (crit),
+ * scaled to the certificate's lifetime so 45-day and 6-day certificates that
+ * renew on schedule aren't flagged. 30/14 days when the lifetime is unknown.
+ */
+function expiryThresholds(tls) {
+  const from = typeof tls.validFrom === "string" ? Date.parse(tls.validFrom) : NaN;
+  const to = typeof tls.validTo === "string" ? Date.parse(tls.validTo) : NaN;
+  const lifetime = (to - from) / DAY_MS;
+  if (!Number.isFinite(lifetime) || lifetime <= 0) return { warnBelow: 30, critBelow: 14 };
+  return { warnBelow: Math.min(30, lifetime / 4), critBelow: Math.min(14, lifetime / 10) };
+}
+
 function certificate(snapshot) {
   const { tls } = view(snapshot);
   if (!tls) return null;
@@ -589,13 +687,18 @@ function certificate(snapshot) {
   const issuer = typeof tls.issuer === "string" && tls.issuer.trim() ? tls.issuer.trim() : null;
   const withIssuer = (text) => (issuer ? `${text} · ${issuer}` : text);
 
+  const days = Number.isFinite(tls.daysLeft) ? tls.daysLeft : null;
+  const expiredAgo = () => withIssuer(`expired ${-days} ${plural(-days, "day", "days")} ago`);
+
   if (tls.valid === false) {
     const code = typeof tls.error === "string" && tls.error.trim() ? tls.error.trim() : null;
     const copy = (code && Object.hasOwn(UNTRUSTED_COPY, code) && UNTRUSTED_COPY[code]) || UNTRUSTED_DEFAULT;
+    if (code === "CERT_HAS_EXPIRED") {
+      return make("crit", "Certificate expired", copy.desc, days !== null && days < 0 ? expiredAgo() : code, copy.fix);
+    }
     return make("crit", "Certificate not trusted", copy.desc, code ?? "verification failed", copy.fix);
   }
 
-  const days = Number.isFinite(tls.daysLeft) ? tls.daysLeft : null;
   if (days === null) {
     return make(
       "ok",
@@ -606,17 +709,17 @@ function certificate(snapshot) {
     );
   }
   if (days < 0) {
-    const ago = -days;
     return make(
       "crit",
       "Certificate expired",
       "Browsers show visitors a full-page security warning instead of your site.",
-      withIssuer(`expired ${ago} ${plural(ago, "day", "days")} ago`),
+      expiredAgo(),
       RENEW_FIX
     );
   }
   const left = withIssuer(`${days} ${plural(days, "day", "days")} left`);
-  if (days < 14) {
+  const { warnBelow, critBelow } = expiryThresholds(tls);
+  if (days < critBelow) {
     const title =
       days === 0 ? "Certificate expires today" : `Certificate expires in ${days} ${plural(days, "day", "days")}`;
     return make(
@@ -627,13 +730,13 @@ function certificate(snapshot) {
       "Renew it now: run `certbot renew` for Let's Encrypt, or reissue it in your host's dashboard. Then confirm automatic renewal works with `certbot renew --dry-run`."
     );
   }
-  if (days < 30) {
+  if (days < warnBelow) {
     return make(
       "warn",
       "Certificate expires soon",
-      "It still works, but if renewal fails, visitors will see a security warning within a month.",
+      "It still works, but if renewal fails, visitors will see a security warning when it runs out.",
       left,
-      "Automated certificates normally renew about 30 days before expiry, so renewal may already be failing. Run `certbot renew --dry-run` to check, or reissue the certificate in your host's dashboard."
+      "Automated certificates normally renew with about a third of their lifetime left, so renewal may already be failing. Run `certbot renew --dry-run` to check, or reissue the certificate in your host's dashboard."
     );
   }
   return make(
@@ -683,14 +786,27 @@ function csp(snapshot) {
     const name = policy.has("script-src") ? "script-src" : policy.has("default-src") ? "default-src" : null;
     if (!name) continue;
     const sources = policy.get(name).toLowerCase();
+    // A nonce, hash or 'strict-dynamic' switches off 'unsafe-inline'.
     const pinned = NONCE_OR_HASH.test(sources);
     if (sources.includes("'unsafe-inline'") && !pinned) {
       inlineDirective ??= name;
     } else {
       blocked = true;
     }
-    if (!pinned && isWideSourceList(sources)) wideDirective ??= `${name}: ${sources}`;
+    // Only 'strict-dynamic' switches off host and scheme sources such as * or https:.
+    if (!STRICT_DYNAMIC.test(sources) && isWideSourceList(sources)) wideDirective ??= `${name}: ${sources}`;
     else restricts = true;
+  }
+  // A policy that lets scripts load from anywhere is no better than none,
+  // whether or not it also allows inline scripts.
+  if (!restricts) {
+    return make(
+      "warn",
+      "CSP doesn't restrict scripts",
+      "Your policy exists but still lets scripts load from any website, so it won't stop an injected script.",
+      wideDirective ? labeled("CSP", wideDirective) : `CSP script-src: ${ABSENT}`,
+      "Add `script-src 'self'` plus the domains you really load scripts from, or a `default-src 'self'` fallback. Avoid `*` and bare schemes such as `https:`, which allow any site. If you use nonces, add `'strict-dynamic'` so browsers ignore those wide fallbacks."
+    );
   }
   if (inlineDirective && !blocked) {
     return make(
@@ -699,15 +815,6 @@ function csp(snapshot) {
       "Your policy still lets inline scripts run, which is how most script injection attacks get in.",
       `CSP ${inlineDirective}: 'unsafe-inline'`,
       "Move inline scripts into files, or allow specific ones with a nonce (`'nonce-…'`) or hash (`'sha256-…'`) instead of `'unsafe-inline'`. Next.js supports nonces through middleware."
-    );
-  }
-  if (!restricts) {
-    return make(
-      "info",
-      "CSP doesn't restrict scripts",
-      "Your policy exists but still lets scripts load from any website, so it won't stop an injected script.",
-      wideDirective ? labeled("CSP", wideDirective) : `CSP script-src: ${ABSENT}`,
-      "Add `script-src 'self'` plus the domains you really load scripts from, or a `default-src 'self'` fallback. Avoid `*` and bare schemes such as `https:`, which allow any site."
     );
   }
   return make(
@@ -815,8 +922,15 @@ function referrerPolicy(snapshot) {
       `Set it explicitly so older browsers behave the same: \`Referrer-Policy: strict-origin-when-cross-origin\`. ${directive}`
     );
   }
-  const lower = value.toLowerCase();
-  if (lower.includes("unsafe-url") || lower.includes("no-referrer-when-downgrade")) {
+  // A list such as "no-referrer-when-downgrade, strict-origin-when-cross-origin"
+  // is a fallback chain: browsers apply the last token they recognise.
+  const effective = value
+    .toLowerCase()
+    .split(",")
+    .map((token) => token.trim())
+    .filter((token) => REFERRER_POLICIES.has(token))
+    .at(-1);
+  if (effective === "unsafe-url" || effective === "no-referrer-when-downgrade") {
     return finding(
       "referrer-policy",
       "headers",
@@ -867,6 +981,21 @@ function permissionsPolicy(snapshot) {
 
 // ---------------------------------------------------------------- cookies
 
+// nginx cookie names are tokens; anything odd is shown as a placeholder.
+const NGINX_COOKIE_NAME = /^[A-Za-z0-9!#$%&'*+.^_|~-]{1,40}$/;
+
+/**
+ * The nginx part of a cookie fix. nginx applies only the first
+ * proxy_cookie_flags line that matches a cookie, so every fix suggests the
+ * same single line with all flags, naming the cookie.
+ */
+function nginxCookieFix(name, mayBeScriptRead) {
+  const shown = NGINX_COOKIE_NAME.test(name ?? "") ? name : "<cookie>";
+  const line = `\`proxy_cookie_flags ${shown} secure httponly samesite=lax;\``;
+  const caveat = mayBeScriptRead ? " (drop `httponly` if your own JavaScript reads it)" : "";
+  return `nginx 1.19.3+: put all flags for a cookie on one line, such as ${line}${caveat}, because nginx applies only the first line that matches a cookie.`;
+}
+
 function cookieSecure(snapshot) {
   const { cookies, scheme } = view(snapshot);
   if (cookies.length === 0) {
@@ -891,7 +1020,7 @@ function cookieSecure(snapshot) {
       "Cookies sent without Secure",
       "These cookies can also travel over plain HTTP, where anyone on the same network can read them.",
       nameList(insecure.map((c) => c.name)),
-      "Add `Secure` to every cookie. PHP: `session.cookie_secure = 1` in php.ini; Express: `cookie: { secure: true }` in your session settings; nginx 1.19.3+: `proxy_cookie_flags ~ secure;`."
+      `Add \`Secure\` to every cookie. PHP: \`session.cookie_secure = 1\` in php.ini; Express: \`cookie: { secure: true }\` in your session settings, plus \`app.set('trust proxy', 1)\` behind a proxy or a host such as Vercel, or the cookie is never set. ${nginxCookieFix(insecure[0].name, true).replace(/^nginx/, "Nginx")}`
     );
   }
   return finding(
@@ -919,7 +1048,7 @@ function cookieHttpOnly(snapshot) {
       "Session cookie readable by scripts",
       "If any script on your page is compromised, it can read this cookie and take over a visitor's session.",
       nameList(sensitive.map((c) => c.name)),
-      "Add `HttpOnly` to session and login cookies. PHP: `session.cookie_httponly = 1`; Express: `cookie: { httpOnly: true }`; nginx 1.19.3+: `proxy_cookie_flags ~ httponly;`. A CSRF token cookie that your front-end must read, such as `XSRF-TOKEN`, is the one exception."
+      `Add \`HttpOnly\` to session and login cookies. PHP: \`session.cookie_httponly = 1\`; Express: \`cookie: { httpOnly: true }\`; ${nginxCookieFix(sensitive[0].name, false)} A CSRF token cookie that your front-end must read, such as \`XSRF-TOKEN\`, is the one exception.`
     );
   }
   if (readable.length > 0) {
@@ -969,7 +1098,7 @@ function cookieSameSite(snapshot) {
       "Cookies without SameSite",
       "Chrome and Edge treat these as Lax by default but other browsers may not, so setting it yourself keeps behavior the same everywhere.",
       nameList(missing.map((c) => c.name)),
-      "Add `SameSite=Lax` to your cookies, or `SameSite=Strict` for admin sessions. PHP: `session.cookie_samesite = \"Lax\"`; Express: `cookie: { sameSite: 'lax' }`; nginx 1.19.3+: `proxy_cookie_flags ~ samesite=lax;`."
+      `Add \`SameSite=Lax\` to your cookies, or \`SameSite=Strict\` for admin sessions. PHP: \`session.cookie_samesite = "Lax"\`; Express: \`cookie: { sameSite: 'lax' }\`; ${nginxCookieFix(missing[0].name, true)}`
     );
   }
   return finding(
@@ -996,37 +1125,39 @@ function cors(snapshot) {
     return make(
       "ok",
       "No cross-origin access",
-      "Other websites can't read your responses from a visitor's browser.",
+      "Your page sends no CORS headers to a normal request, so other websites can't read it from a visitor's browser.",
       `ACAO: ${ABSENT}`,
       NOTHING_TO_CHANGE
     );
   }
   if (origin === "*") {
     if (credentials === "true") {
+      // Browsers refuse credentialed requests when the allowed origin is "*",
+      // so this combination exposes nothing beyond plain public CORS.
       return make(
-        "crit",
-        "CORS open with credentials",
-        "Your server says any website may make requests with your visitors' logins, a misconfiguration attackers actively look for.",
+        "info",
+        "CORS credentials flag ignored",
+        "Browsers never send cookies or logins to a response that allows any origin, so your credentials header has no effect and only public content is readable.",
         "ACAO: *, credentials: true",
-        "Replace `*` with an explicit list of trusted origins, and send `Access-Control-Allow-Credentials: true` only to those. With the Express `cors` package: `cors({ origin: ['https://app.example.com'], credentials: true })`."
+        "Remove `Access-Control-Allow-Credentials: true` if nothing needs it. If other sites must make logged-in requests, check the request's `Origin` against an explicit list of trusted sites and echo back only a match, never every origin."
       );
     }
     return make(
-      "info",
-      "Open to any origin",
-      "Any website can read this response, which is fine for public files and APIs but not for anything personal.",
+      "ok",
+      "Public CORS, no logins",
+      "Any website can read this response, but browsers never send your visitors' cookies or logins with it, so only content that's already public is readable.",
       "ACAO: *",
-      "Leave it if this only serves public content. Otherwise, list the specific origins that need access instead of `*`."
+      "Nothing to change. This is fine for public pages and files; list specific origins instead of `*` only if the response depends on the visitor's network, such as an intranet."
     );
   }
   if (origin.toLowerCase() === "null") {
     const withLogins = credentials === "true";
     return make(
-      withLogins ? "crit" : "warn",
+      withLogins ? "crit" : "info",
       withLogins ? "CORS trusts the null origin" : "CORS allows the null origin",
       withLogins
         ? "Any site can pose as the null origin from a sandboxed frame and read responses with your visitors' logins."
-        : "Any site can pose as the null origin from a sandboxed frame and read this response.",
+        : "Any site can pose as the null origin from a sandboxed frame and read this response, though browsers won't send your visitors' logins with it.",
       withLogins ? "ACAO: null, credentials: true" : "ACAO: null",
       "Never allow `null`. Check the request's `Origin` against an explicit list of trusted sites and echo back only a match."
     );
@@ -1042,30 +1173,38 @@ function cors(snapshot) {
 
 // ---------------------------------------------------------------- disclosure
 
+// Hosting platforms come first: many of them run behind a CDN (GitHub Pages
+// on Fastly, Render and Shopify on Cloudflare), and the platform is what the
+// site owner chose and controls. Each test returns the header that matched.
 const HOSTING = [
-  { name: "Cloudflare", cdn: true, test: (h) => h["cf-ray"] !== undefined || includes(h.server, "cloudflare") },
-  { name: "Vercel", cdn: false, test: (h) => h["x-vercel-id"] !== undefined },
-  { name: "Netlify", cdn: false, test: (h) => h["x-nf-request-id"] !== undefined },
-  { name: "Amazon CloudFront", cdn: true, test: (h) => h["x-amz-cf-id"] !== undefined },
+  { name: "Vercel", cdn: false, test: (h) => present(h, "x-vercel-id") },
+  { name: "Netlify", cdn: false, test: (h) => present(h, "x-nf-request-id") },
+  { name: "GitHub Pages", cdn: false, test: (h) => present(h, "x-github-request-id") },
+  { name: "Render", cdn: false, test: (h) => present(h, "x-render-origin-server") },
+  { name: "Fly.io", cdn: false, test: (h) => present(h, "fly-request-id") },
+  { name: "Shopify", cdn: false, test: (h) => present(h, "x-shopid") },
+  { name: "Cloudflare", cdn: true, test: (h) => present(h, "cf-ray") ?? (includes(h.server, "cloudflare") ? "server" : null) },
+  { name: "Amazon CloudFront", cdn: true, test: (h) => present(h, "x-amz-cf-id") },
   {
     name: "Fastly",
     cdn: true,
-    test: (h) => h["x-fastly-request-id"] !== undefined || includes(h["x-served-by"], "cache-"),
+    test: (h) => present(h, "x-fastly-request-id") ?? (includes(h["x-served-by"], "cache-") ? "x-served-by" : null),
   },
-  { name: "GitHub Pages", cdn: false, test: (h) => h["x-github-request-id"] !== undefined },
-  { name: "Azure Front Door", cdn: true, test: (h) => h["x-azure-ref"] !== undefined },
-  { name: "Fly.io", cdn: false, test: (h) => h["fly-request-id"] !== undefined },
-  { name: "Render", cdn: false, test: (h) => h["x-render-origin-server"] !== undefined },
-  { name: "Akamai", cdn: true, test: (h) => includes(h.server, "akamaighost") },
+  { name: "Azure Front Door", cdn: true, test: (h) => present(h, "x-azure-ref") },
+  { name: "Akamai", cdn: true, test: (h) => (includes(h.server, "akamaighost") ? "server" : null) },
   {
     name: "Google",
     cdn: false,
     test: (h) => {
       const server = (h.server ?? "").toLowerCase();
-      return server === "google frontend" || server === "gws";
+      return server === "google frontend" || server === "gws" ? "server" : null;
     },
   },
 ];
+
+function present(headers, name) {
+  return headers[name] !== undefined ? name : null;
+}
 
 function includes(value, needle) {
   return typeof value === "string" && value.toLowerCase().includes(needle);
@@ -1073,19 +1212,22 @@ function includes(value, needle) {
 
 function hosting(snapshot) {
   const { headers } = view(snapshot);
-  const match = HOSTING.find((provider) => provider.test(headers));
-  if (!match) return null;
-  return finding(
-    "hosting",
-    "disclosure",
-    "info",
-    "Hosting provider identified",
-    "Anyone can see which provider serves your site, which is normal and gives attackers only a small hint.",
-    `via: ${match.name}`,
-    match.cdn
-      ? `No action needed. Make sure your origin server only accepts traffic from ${match.name}, so nobody can bypass it by finding the server's own address.`
-      : `No action needed. This can't be hidden on ${match.name} and reveals little on its own.`
-  );
+  for (const provider of HOSTING) {
+    const header = provider.test(headers);
+    if (!header) continue;
+    return finding(
+      "hosting",
+      "disclosure",
+      "info",
+      "Hosting provider identified",
+      `Anyone can see that ${provider.name} serves your site, which is normal and gives attackers only a small hint.`,
+      headerEvidence(header, headers[header]),
+      provider.cdn
+        ? `No action needed. Make sure your origin server only accepts traffic from ${provider.name}, so nobody can bypass it by finding the server's own address.`
+        : `No action needed. This can't be hidden on ${provider.name} and reveals little on its own.`
+    );
+  }
+  return null;
 }
 
 const INTERNAL_HEADERS = [

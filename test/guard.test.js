@@ -879,7 +879,8 @@ describe('fetchSnapshot', () => {
       ]);
       assert.equal(snap.redirectStop, null, 'chain reached a real page');
       assert.equal(snap.input, `http://127.0.0.1:${site.port}/start?x=1#frag`);
-      assert.equal(snap.requestedUrl, `${base}/start`);
+      // http:// input is tried over HTTPS first; this server only speaks plain HTTP.
+      assert.equal(snap.requestedUrl, `https://127.0.0.1:${site.port}/start`);
       assert.equal(snap.finalUrl, `${base}/final`);
       assert.equal(snap.status, 200);
       assert.deepEqual(snap.redirects, [{ from: `${base}/start`, to: `${base}/final`, status: 301 }]);
@@ -1077,6 +1078,7 @@ describe('fetchSnapshot', () => {
         assert.equal(snap.tls.error, 'DEPTH_ZERO_SELF_SIGNED_CERT');
         assert.equal(snap.tls.issuer, 'Surface Test');
         assert.match(snap.tls.protocol, /^TLSv1\.[23]$/);
+        assert.equal(snap.tls.validFrom, '2026-10-22T15:29:50.000Z');
         assert.equal(snap.tls.validTo, '2126-09-28T15:29:50.000Z');
         assert.equal(snap.tls.daysLeft, Math.floor((Date.parse(snap.tls.validTo) - Date.now()) / 86400000));
         // SNI carried the host name (not the IP) on the retried connection.
@@ -1091,6 +1093,37 @@ describe('fetchSnapshot', () => {
         const snap2 = await fetchSnapshot(new URL(`https://127.0.0.1:${tlsSite.port}/`), 'x', { probeTimeoutMs: 500 });
         assert.equal(snap2.tls.valid, false);
         assert.equal(tlsSite.requests.at(-1).servername, false);
+      } finally {
+        await tlsSite.close();
+      }
+    }));
+
+  test('http:// input is upgraded to HTTPS first, so a site with both is not reported as plain HTTP', () =>
+    allowingPrivate(async () => {
+      const tlsSite = await startServer(
+        (req, res) => {
+          res.setHeader('Strict-Transport-Security', 'max-age=31536000');
+          res.writeHead(200);
+          res.end();
+        },
+        { tls: TEST_TLS },
+      );
+      try {
+        const resolver = fakeResolver({ 'surface.test': ['127.0.0.1'] });
+        const input = `http://surface.test:${tlsSite.port}/`;
+        const snap = await fetchSnapshot(normalizeInput(input), input, { dnsLookup: resolver, probeTimeoutMs: 500 });
+        assert.equal(snap.requestedUrl, `https://surface.test:${tlsSite.port}/`);
+        assert.equal(snap.finalUrl, `https://surface.test:${tlsSite.port}/`);
+        assert.equal(snap.status, 200);
+        assert.ok(snap.tls, 'certificate captured');
+        assert.equal(snap.tls.validFrom, '2026-10-22T15:29:50.000Z');
+        assert.equal(snap.headers['strict-transport-security'], 'max-age=31536000');
+        assert.ok(snap.httpProbe && typeof snap.httpProbe === 'object', 'plain-HTTP probe still runs');
+        const { analyze } = await import('../api/_lib/analyze.js');
+        const report = analyze(snap);
+        const https = report.findings.find((f) => f.id === 'https');
+        assert.equal(https.severity, 'ok', 'not "No HTTPS"');
+        assert.equal(report.findings.find((f) => f.id === 'hsts').severity, 'ok');
       } finally {
         await tlsSite.close();
       }

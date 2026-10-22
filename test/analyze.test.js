@@ -251,30 +251,43 @@ describe("1. server-header", () => {
     assert.equal(one("server-header", snap({ headers: { server: "  " } })).severity, "ok");
   });
 
-  test("version -> crit with nginx and Apache directives", () => {
+  test("version -> warn with nginx, Apache and IIS directives", () => {
     const f = one("server-header", snap({ headers: { server: "nginx/1.18.0" } }));
-    expectFinding(f, { severity: "crit", title: "Server version exposed", evidence: "Server: nginx/1.18.0" });
+    expectFinding(f, { severity: "warn", title: "Server version exposed", evidence: "Server: nginx/1.18.0" });
     assert.ok(f.fix.includes("`server_tokens off;`"));
     assert.ok(f.fix.includes("`ServerTokens Prod`"));
     assert.ok(f.fix.includes("`ServerSignature Off`"));
   });
 
-  test("platform load balancer builds are not a version leak", () => {
-    for (const server of ["awselb/2.0", "AWSELB/2.0", "elb"]) {
+  test("IIS fix names the Windows version removeServerHeader needs and an older-IIS route", () => {
+    const f = one("server-header", snap({ headers: { server: "Microsoft-IIS/10.0" } }));
+    assert.ok(f.fix.includes("Windows Server 2019 or later"), f.fix);
+    assert.ok(f.fix.includes('removeServerHeader="true"'));
+    assert.ok(f.fix.includes("`RESPONSE_SERVER`"));
+    assert.ok(!f.fix.includes("IIS 10+"));
+  });
+
+  test("platform banners -> ok Hosting platform named, even with a build number", () => {
+    for (const server of ["awselb/2.0", "AWSELB/2.0", "elb", "cloudflare", "Vercel", "GitHub.com", "Fly/51ee4ef9 (2024-11-06)"]) {
       const f = one("server-header", snap({ headers: { server } }));
-      assert.equal(f.severity, "info", server);
+      expectFinding(f, {
+        severity: "ok",
+        title: "Hosting platform named",
+        desc: "Only your hosting platform's name is visible, nothing about your own software.",
+        evidence: `Server: ${server}`,
+      });
       assert.ok(f.fix.startsWith("Nothing to change."), server);
     }
   });
 
   test("both version patterns count", () => {
     for (const server of ["Apache/2", "Microsoft-IIS/10.0", "LiteSpeed 6.1", "Caddy / 2"]) {
-      assert.equal(one("server-header", snap({ headers: { server } })).severity, "crit", server);
+      assert.equal(one("server-header", snap({ headers: { server } })).severity, "warn", server);
     }
   });
 
   test("name only -> info", () => {
-    for (const server of ["nginx", "cloudflare", "Apache", "openresty"]) {
+    for (const server of ["nginx", "Apache", "openresty", "LiteSpeed"]) {
       expectFinding(one("server-header", snap({ headers: { server } })), {
         severity: "info",
         title: "Server software named",
@@ -283,7 +296,7 @@ describe("1. server-header", () => {
     }
   });
 
-  test("info fix depends on who sets the name", () => {
+  test("fix depends on who sets the name", () => {
     const own = one("server-header", snap({ headers: { server: "nginx" } }));
     assert.ok(own.fix.includes("`server_tokens off;`"));
     assert.ok(own.fix.includes("`ServerTokens Prod`"));
@@ -293,7 +306,7 @@ describe("1. server-header", () => {
   });
 
   test("header names are matched case-insensitively", () => {
-    assert.equal(one("server-header", snap({ headers: { Server: "nginx/1.25.3" } })).severity, "crit");
+    assert.equal(one("server-header", snap({ headers: { Server: "nginx/1.25.3" } })).severity, "warn");
   });
 });
 
@@ -306,18 +319,18 @@ describe("2. powered-by", () => {
     });
   });
 
-  test("version -> crit with PHP, Express and Next.js fixes", () => {
+  test("version -> warn with PHP, Express and Next.js fixes", () => {
     const f = one("powered-by", snap({ headers: { "x-powered-by": "PHP/7.4.3" } }));
-    expectFinding(f, { severity: "crit", title: "Backend version leaked", evidence: "X-Powered-By: PHP/7.4.3" });
+    expectFinding(f, { severity: "warn", title: "Backend version leaked", evidence: "X-Powered-By: PHP/7.4.3" });
     assert.ok(f.fix.includes("`expose_php = Off`"));
     assert.ok(f.fix.includes("`app.disable('x-powered-by')`"));
     assert.ok(f.fix.includes("`poweredByHeader: false`"));
   });
 
-  test("name only -> warn", () => {
+  test("name only -> info", () => {
     for (const value of ["Express", "Next.js", "ASP.NET"]) {
       const f = one("powered-by", snap({ headers: { "x-powered-by": value } }));
-      expectFinding(f, { severity: "warn", title: "Backend framework named" });
+      expectFinding(f, { severity: "info", title: "Backend framework named" });
       assert.ok(f.fix.includes("`poweredByHeader: false`"));
     }
   });
@@ -332,13 +345,13 @@ describe("3. fingerprints", () => {
     });
   });
 
-  test("x-aspnet-version and x-aspnetmvc-version are always crit", () => {
+  test("x-aspnet-version and x-aspnetmvc-version are always warn", () => {
     const list = run("fingerprints", snap({ headers: { "x-aspnet-version": "4.0.30319", "x-aspnetmvc-version": "5" } }));
     assert.deepEqual(
       list.map((f) => [f.id, f.severity]),
       [
-        ["fingerprints:x-aspnet-version", "crit"],
-        ["fingerprints:x-aspnetmvc-version", "crit"],
+        ["fingerprints:x-aspnet-version", "warn"],
+        ["fingerprints:x-aspnetmvc-version", "warn"],
       ]
     );
     assert.equal(list[0].evidence, "X-AspNet-Version: 4.0.30319");
@@ -346,11 +359,11 @@ describe("3. fingerprints", () => {
     list.forEach(checkFinding);
   });
 
-  test("x-generator: crit with a version, warn without", () => {
+  test("x-generator: warn with a version, info without", () => {
     const versioned = one("fingerprints", snap({ headers: { "x-generator": "WordPress 6.4.2" } }));
-    expectFinding(versioned, { id: "fingerprints:x-generator", severity: "crit" });
+    expectFinding(versioned, { id: "fingerprints:x-generator", severity: "warn" });
     const named = one("fingerprints", snap({ headers: { "x-generator": "Drupal 10 (https://www.drupal.org)" } }));
-    expectFinding(named, { id: "fingerprints:x-generator", severity: "warn" });
+    expectFinding(named, { id: "fingerprints:x-generator", severity: "info" });
   });
 
   test("Drupal cache headers -> one info finding", () => {
@@ -527,10 +540,20 @@ describe("7. certificate", () => {
     expectNull("certificate", httpSnap());
   });
 
-  test("not trusted -> crit with the error code", () => {
+  test("CERT_HAS_EXPIRED -> crit Certificate expired, with the day count when known", () => {
     const expired = cert({ valid: false, error: "CERT_HAS_EXPIRED", daysLeft: -3 });
-    expectFinding(expired, { severity: "crit", title: "Certificate not trusted", evidence: "CERT_HAS_EXPIRED" });
+    expectFinding(expired, { severity: "crit", title: "Certificate expired", evidence: "expired 3 days ago · Let's Encrypt" });
     assert.ok(expired.desc.includes("expired"));
+    assert.ok(expired.fix.includes("`certbot renew`"));
+    // Clock skew: the verifier says expired but our day count doesn't.
+    expectFinding(cert({ valid: false, error: "CERT_HAS_EXPIRED", daysLeft: 0 }), {
+      title: "Certificate expired",
+      evidence: "CERT_HAS_EXPIRED",
+    });
+    expectFinding(cert({ valid: false, error: "CERT_HAS_EXPIRED", daysLeft: null }), { evidence: "CERT_HAS_EXPIRED" });
+  });
+
+  test("not trusted -> crit with the error code", () => {
 
     const selfSigned = cert({ valid: false, error: "DEPTH_ZERO_SELF_SIGNED_CERT" });
     expectFinding(selfSigned, { severity: "crit", evidence: "DEPTH_ZERO_SELF_SIGNED_CERT" });
@@ -607,10 +630,10 @@ describe("8. csp", () => {
     assert.equal(csp("script-src 'nonce-abc' 'strict-dynamic' https:").severity, "ok", "strict CSP with scheme fallback");
   });
 
-  test("policy that doesn't restrict scripts -> info", () => {
-    for (const policy of ["frame-ancestors 'none'", "img-src 'self'", "script-src *", "default-src https:", "script-src 'self' data:"]) {
+  test("policy that doesn't restrict scripts -> warn, like no policy", () => {
+    for (const policy of ["frame-ancestors 'none'", "img-src 'self'", "upgrade-insecure-requests", "script-src *", "default-src https:", "script-src 'self' data:"]) {
       const f = csp(policy);
-      assert.equal(f.severity, "info", policy);
+      assert.equal(f.severity, "warn", policy);
       assert.equal(f.title, "CSP doesn't restrict scripts", policy);
     }
     assert.equal(csp("img-src 'self'").evidence, "CSP script-src: —");
@@ -887,28 +910,35 @@ describe("15. cookie-samesite", () => {
 describe("16. cors", () => {
   const cors = (headers) => one("cors", snap({ headers }));
 
-  test("absent -> ok", () => {
-    expectFinding(cors({}), { severity: "ok", title: "No cross-origin access", evidence: "ACAO: —" });
+  test("absent -> ok, scoped to a normal request", () => {
+    expectFinding(cors({}), {
+      severity: "ok",
+      title: "No cross-origin access",
+      desc: "Your page sends no CORS headers to a normal request, so other websites can't read it from a visitor's browser.",
+      evidence: "ACAO: —",
+    });
   });
 
-  test("* with credentials -> crit", () => {
-    expectFinding(cors({ "access-control-allow-origin": "*", "access-control-allow-credentials": "true" }), {
-      severity: "crit",
-      title: "CORS open with credentials",
-    });
+  test("* with credentials -> info: browsers ignore credentials with *", () => {
+    const f = cors({ "access-control-allow-origin": "*", "access-control-allow-credentials": "true" });
+    expectFinding(f, { severity: "info", title: "CORS credentials flag ignored", evidence: "ACAO: *, credentials: true" });
+    assert.match(f.desc, /never send cookies/);
+    assert.ok(f.fix.includes("`Access-Control-Allow-Credentials: true`"));
     assert.equal(
       cors({ "access-control-allow-origin": "*", "access-control-allow-credentials": "TRUE" }).severity,
-      "crit"
+      "info"
     );
   });
 
-  test("* alone -> info that says it is fine for public assets", () => {
+  test("* alone -> ok Public CORS, no logins", () => {
     const f = cors({ "access-control-allow-origin": "*" });
-    expectFinding(f, { severity: "info", title: "Open to any origin", evidence: "ACAO: *" });
-    assert.match(f.desc, /fine for public/);
+    expectFinding(f, { severity: "ok", title: "Public CORS, no logins", evidence: "ACAO: *" });
+    assert.match(f.desc, /never send/);
+    assert.ok(f.fix.startsWith("Nothing to change."));
+    assert.match(f.fix, /fine for public/);
     assert.equal(
       cors({ "access-control-allow-origin": "*", "access-control-allow-credentials": "false" }).severity,
-      "info"
+      "ok"
     );
   });
 
@@ -929,38 +959,48 @@ describe("17. hosting", () => {
     expectNull("hosting", snap({ headers: { server: "nginx" } }));
   });
 
-  test("each provider is recognised", () => {
+  test("each provider is recognised; evidence is the header that matched", () => {
     const cases = [
-      [{ "cf-ray": "8d2f-AMS" }, "Cloudflare"],
-      [{ server: "cloudflare" }, "Cloudflare"],
-      [{ "x-vercel-id": "fra1::abc" }, "Vercel"],
-      [{ "x-nf-request-id": "01H" }, "Netlify"],
-      [{ "x-amz-cf-id": "abc==" }, "Amazon CloudFront"],
-      [{ "x-fastly-request-id": "abc" }, "Fastly"],
-      [{ "x-served-by": "cache-fra-eddf8230102-FRA" }, "Fastly"],
-      [{ "x-github-request-id": "A1B2:3C4D" }, "GitHub Pages"],
-      [{ "x-azure-ref": "20261022T" }, "Azure Front Door"],
-      [{ "fly-request-id": "01J" }, "Fly.io"],
-      [{ "x-render-origin-server": "Render" }, "Render"],
-      [{ server: "AkamaiGHost" }, "Akamai"],
-      [{ server: "Google Frontend" }, "Google"],
-      [{ server: "gws" }, "Google"],
+      [{ "cf-ray": "8d2f-AMS" }, "Cloudflare", "CF-Ray: 8d2f-AMS"],
+      [{ server: "cloudflare" }, "Cloudflare", "Server: cloudflare"],
+      [{ "x-vercel-id": "fra1::abc" }, "Vercel", "X-Vercel-Id: fra1::abc"],
+      [{ "x-nf-request-id": "01H" }, "Netlify", "X-NF-Request-ID: 01H"],
+      [{ "x-amz-cf-id": "abc==" }, "Amazon CloudFront", "X-Amz-Cf-Id: abc=="],
+      [{ "x-fastly-request-id": "abc" }, "Fastly", "X-Fastly-Request-Id: abc"],
+      [{ "x-served-by": "cache-fra-eddf8230102-FRA" }, "Fastly", "X-Served-By: cache-fra-eddf8230102-FRA"],
+      [{ "x-github-request-id": "A1B2:3C4D" }, "GitHub Pages", "X-GitHub-Request-Id: A1B2:3C4D"],
+      [{ "x-azure-ref": "20261022T" }, "Azure Front Door", "X-Azure-Ref: 20261022T"],
+      [{ "fly-request-id": "01J" }, "Fly.io", "Fly-Request-Id: 01J"],
+      [{ "x-render-origin-server": "Render" }, "Render", "X-Render-Origin-Server: Render"],
+      [{ "x-shopid": "12345" }, "Shopify", "X-ShopId: 12345"],
+      [{ server: "AkamaiGHost" }, "Akamai", "Server: AkamaiGHost"],
+      [{ server: "Google Frontend" }, "Google", "Server: Google Frontend"],
+      [{ server: "gws" }, "Google", "Server: gws"],
     ];
-    for (const [headers, name] of cases) {
+    for (const [headers, name, evidence] of cases) {
       const list = host(headers);
       assert.equal(list.length, 1, name);
-      expectFinding(list[0], {
-        id: "hosting",
-        severity: "info",
-        title: "Hosting provider identified",
-        evidence: `via: ${name}`,
-      });
+      expectFinding(list[0], { id: "hosting", severity: "info", title: "Hosting provider identified", evidence });
+      assert.ok(list[0].desc.includes(name), `${name} named in desc`);
+      assert.ok(list[0].fix.includes(name), `${name} named in fix`);
     }
   });
 
-  test("first match wins", () => {
-    assert.equal(host({ "x-amz-cf-id": "x", "cf-ray": "y" })[0].evidence, "via: Cloudflare");
-    assert.equal(host({ "x-github-request-id": "x", "x-fastly-request-id": "y" })[0].evidence, "via: Fastly");
+  test("evidence never uses a made-up Via label", () => {
+    const f = host({ "x-vercel-id": "fra1::iad1::abcd-1729600000000-0123456789ab" })[0];
+    assert.doesNotMatch(f.evidence, /^via:/i);
+    assert.ok(f.evidence.startsWith("X-Vercel-Id: "));
+  });
+
+  test("hosting platforms win over the CDN in front of them", () => {
+    // GitHub Pages runs on Fastly; Render and Shopify run behind Cloudflare.
+    const pages = host({ "x-github-request-id": "x", "x-fastly-request-id": "y", "x-served-by": "cache-fra-1" })[0];
+    assert.ok(pages.desc.includes("GitHub Pages"));
+    assert.ok(!pages.fix.includes("origin server"), "no origin lock-down advice for a platform");
+    assert.ok(host({ "x-render-origin-server": "uvicorn", "cf-ray": "y", server: "cloudflare" })[0].desc.includes("Render"));
+    assert.ok(host({ "x-shopid": "1", "cf-ray": "y" })[0].desc.includes("Shopify"));
+    // Among CDNs, the order is unchanged.
+    assert.equal(host({ "x-amz-cf-id": "x", "cf-ray": "y" })[0].evidence, "CF-Ray: y");
   });
 
   test("near misses do not match", () => {
@@ -1129,16 +1169,16 @@ describe("analyze: sorting", () => {
       })
     );
     assert.deepEqual(pairs(report), [
-      "crit fingerprints:x-aspnet-version",
-      "crit cors",
-      "warn powered-by",
+      "warn fingerprints:x-aspnet-version",
       "warn hsts",
       "warn csp",
       "warn clickjacking",
       "info server-header",
+      "info powered-by",
       "info fingerprints:x-runtime",
       "info referrer-policy",
       "info permissions-policy",
+      "info cors",
       "info status",
       "ok https",
       "ok certificate",
@@ -1307,15 +1347,15 @@ describe("fixtures", () => {
     ]);
   });
 
-  test("leaky.json -> high, capped at 100", () => {
+  test("leaky.json -> high", () => {
     const report = analyze(loadFixture("leaky.json"));
-    assert.equal(report.score, 100);
+    assert.equal(report.score, 95);
     assert.equal(report.level, "high");
-    assert.deepEqual(report.counts, { total: 17, crit: 3, warn: 7, info: 3, ok: 4 });
+    assert.deepEqual(report.counts, { total: 17, crit: 1, warn: 9, info: 3, ok: 4 });
     assert.deepEqual(pairs(report), [
-      "crit server-header",
-      "crit powered-by",
       "crit debug-headers",
+      "warn server-header",
+      "warn powered-by",
       "warn http-redirect",
       "warn hsts",
       "warn csp",
@@ -1341,11 +1381,11 @@ describe("fixtures", () => {
 
   test("http-only.json -> no HTTPS, transport rules skipped", () => {
     const report = analyze(loadFixture("http-only.json"));
-    assert.equal(report.score, 60);
-    assert.equal(report.level, "high");
+    assert.equal(report.score, 48);
+    assert.equal(report.level, "moderate");
     assert.deepEqual(pairs(report), [
-      "crit server-header",
       "crit https",
+      "warn server-header",
       "warn csp",
       "warn nosniff",
       "info referrer-policy",
@@ -1365,7 +1405,7 @@ describe("fixtures", () => {
     assert.equal(report.target.host, "old-shop.example.com");
   });
 
-  test("expired-cert.json -> certificate not trusted", () => {
+  test("expired-cert.json -> certificate expired", () => {
     const report = analyze(loadFixture("expired-cert.json"));
     assert.equal(report.score, 38);
     assert.equal(report.level, "moderate");
@@ -1387,22 +1427,21 @@ describe("fixtures", () => {
       "ok debug-headers",
     ]);
     const cert = report.findings[0];
-    assert.equal(cert.title, "Certificate not trusted");
-    assert.equal(cert.evidence, "CERT_HAS_EXPIRED");
+    assert.equal(cert.title, "Certificate expired");
+    assert.equal(cert.evidence, "expired 22 days ago · Let's Encrypt");
   });
 
-  test("cdn.json -> Cloudflare, open CORS", () => {
+  test("cdn.json -> Cloudflare, public CORS", () => {
     const report = analyze(loadFixture("cdn.json"));
-    assert.equal(report.score, 28);
+    assert.equal(report.score, 26);
     assert.equal(report.level, "moderate");
     assert.deepEqual(pairs(report), [
       "warn hsts",
       "warn csp",
       "warn clickjacking",
-      "info server-header",
       "info permissions-policy",
-      "info cors",
       "info hosting",
+      "ok server-header",
       "ok powered-by",
       "ok fingerprints",
       "ok https",
@@ -1413,18 +1452,19 @@ describe("fixtures", () => {
       "ok cookie-secure",
       "ok cookie-httponly",
       "ok cookie-samesite",
+      "ok cors",
       "ok debug-headers",
     ]);
     const byId = Object.fromEntries(report.findings.map((f) => [f.id, f]));
-    assert.equal(byId.hosting.evidence, "via: Cloudflare");
+    assert.equal(byId.hosting.evidence, "CF-Ray: 8d2f6a1b3c4e5f60-AMS");
     assert.equal(byId.cors.evidence, "ACAO: *");
     assert.equal(byId["server-header"].evidence, "Server: cloudflare");
   });
 
   test("wordpress.json -> WordPress fingerprint, inline scripts", () => {
     const report = analyze(loadFixture("wordpress.json"));
-    assert.equal(report.score, 35);
-    assert.equal(report.level, "moderate");
+    assert.equal(report.score, 23);
+    assert.equal(report.level, "low");
     const byId = Object.fromEntries(report.findings.map((f) => [f.id, f]));
     assert.equal(byId["fingerprints:link"].title, "WordPress detected");
     assert.equal(byId["fingerprints:link"].evidence, 'Link: <…/wp-json/>; rel="https://api.w.org/"');
@@ -1432,18 +1472,21 @@ describe("fixtures", () => {
     assert.equal(byId["cookie-secure"].evidence, "wp_lang");
   });
 
-  test("aspnet.json -> ASP.NET fingerprints, CORS with credentials, internal host", () => {
+  test("aspnet.json -> ASP.NET fingerprints, ignored CORS credentials, internal host", () => {
     const report = analyze(loadFixture("aspnet.json"));
-    assert.equal(report.score, 100);
+    assert.equal(report.score, 98);
     assert.equal(report.level, "high");
     assert.deepEqual(
       report.findings.filter((f) => f.severity === "crit").map((f) => f.id),
-      ["server-header", "fingerprints:x-aspnet-version", "fingerprints:x-aspnetmvc-version", "certificate", "cors"]
+      ["certificate"]
     );
     const byId = Object.fromEntries(report.findings.map((f) => [f.id, f]));
     assert.equal(byId.certificate.title, "Certificate expires in 9 days");
     assert.equal(byId["debug-headers"].severity, "warn");
-    assert.equal(byId.hosting.evidence, "via: Azure Front Door");
+    assert.equal(byId.cors.title, "CORS credentials flag ignored");
+    assert.equal(byId["server-header"].severity, "warn");
+    assert.ok(byId.hosting.evidence.startsWith("X-Azure-Ref: "));
+    assert.ok(byId.hosting.desc.includes("Azure Front Door"));
     assert.equal(byId["http-redirect"].title, "Plain HTTP is closed");
   });
 });
@@ -1490,7 +1533,7 @@ describe("audit regressions", () => {
       evidence: "ACAO: null, credentials: true",
     });
     expectFinding(one("cors", snap({ headers: { "access-control-allow-origin": "null" } })), {
-      severity: "warn",
+      severity: "info",
       title: "CORS allows the null origin",
       evidence: "ACAO: null",
     });
@@ -1508,5 +1551,251 @@ describe("audit regressions", () => {
     assert.deepEqual(both.map((f) => f.id), ["status", "status:redirects"]);
 
     assert.equal(ruleById("status").run(snap({ redirectStop: "bogus" })), null, "unknown values are ignored");
+  });
+});
+
+// ---------------------------------------------------------------- detection audit (2026-10)
+
+describe("detection audit: http-redirect without extra requests", () => {
+  const probe = (p) => one("http-redirect", snap({ httpProbe: p }));
+
+  test("a redirect to another http:// address -> info, evidence shows where it goes", () => {
+    const f = probe({ result: "serves-http", status: 301, location: "http://www.example.com/" });
+    expectFinding(f, {
+      severity: "info",
+      title: "HTTP redirect doesn't go straight to HTTPS",
+      evidence: "301 → http://www.example.com/",
+    });
+    assert.ok(f.fix.includes("return 301 https://$host$request_uri;"));
+    const long = probe({ result: "serves-http", status: 302, location: `http://example.com/${"a".repeat(100)}` });
+    assert.equal(long.evidence.length, 64);
+  });
+
+  test("port 80 answering 4xx or 5xx -> info Plain HTTP answers with an error", () => {
+    for (const status of [400, 403, 404, 503]) {
+      const f = probe({ result: "serves-http", status, location: null });
+      expectFinding(f, { severity: "info", title: "Plain HTTP answers with an error", evidence: `HTTP ${status}` });
+      assert.doesNotMatch(f.desc, /unencrypted page/);
+    }
+  });
+
+  test("a real page, or a redirect without a usable Location, is still Plain HTTP still works", () => {
+    for (const p of [
+      { result: "serves-http", status: 200, location: null },
+      { result: "serves-http", status: 301, location: null },
+      { result: "serves-http", status: null, location: null },
+    ]) {
+      expectFinding(probe(p), { severity: "warn", title: "Plain HTTP still works" });
+    }
+  });
+});
+
+describe("detection audit: hsts", () => {
+  const hsts = (value) => one("hsts", snap({ headers: { "strict-transport-security": value } }));
+
+  test("missing or invalid max-age and a too-short max-age have different titles", () => {
+    for (const value of ["includeSubDomains", "max-age=-1", "max-age=31536000.5", "max-age=31536000includeSubDomains"]) {
+      expectFinding(hsts(value), { severity: "warn", title: "HSTS max-age missing", evidence: "max-age: —" });
+    }
+    expectFinding(hsts("max-age=0"), { severity: "warn", title: "HSTS max-age too short", evidence: "max-age=0" });
+  });
+
+  test("the ok fix doesn't ask for preload when it is already there", () => {
+    const ready = hsts("max-age=63072000; includeSubDomains; preload");
+    assert.equal(ready.severity, "ok");
+    assert.doesNotMatch(ready.fix, /add `preload`/);
+    assert.match(ready.fix, /hstspreload\.org/);
+
+    const notReady = hsts("max-age=15552000; preload");
+    assert.equal(notReady.severity, "ok");
+    assert.doesNotMatch(notReady.fix, /add `preload`/);
+    assert.ok(notReady.fix.includes("`includeSubDomains`") && notReady.fix.includes("31536000"));
+
+    const subdomainsOnly = hsts("max-age=31536000; includeSubDomains");
+    assert.match(subdomainsOnly.fix, /add `preload`/);
+    assert.ok(subdomainsOnly.fix.includes("31536000"));
+  });
+});
+
+describe("detection audit: certificate thresholds follow the certificate's lifetime", () => {
+  const DAY = 86400000;
+  const to = Date.parse("2027-01-01T00:00:00.000Z");
+  const cert = (lifetimeDays, daysLeft) =>
+    one(
+      "certificate",
+      snap({
+        tls: {
+          ...TLS_OK,
+          validFrom: new Date(to - lifetimeDays * DAY).toISOString(),
+          validTo: new Date(to).toISOString(),
+          daysLeft,
+        },
+      })
+    );
+  const sev = (lifetime, days) => cert(lifetime, days).severity;
+
+  test("90-day certificate: warn under 22.5 days, crit under 9", () => {
+    assert.equal(sev(90, 29), "ok", "renewal is due at 30 days, not failing yet");
+    assert.equal(sev(90, 23), "ok");
+    assert.equal(sev(90, 22), "warn");
+    assert.equal(sev(90, 9), "warn");
+    assert.equal(sev(90, 8), "crit");
+  });
+
+  test("45-day certificate: warn under 11.25 days, crit under 4.5", () => {
+    assert.equal(sev(45, 20), "ok");
+    assert.equal(sev(45, 12), "ok");
+    assert.equal(sev(45, 11), "warn");
+    assert.equal(sev(45, 5), "warn");
+    assert.equal(sev(45, 4), "crit");
+  });
+
+  test("6-day (160 h) certificate isn't flagged while renewing on schedule", () => {
+    const lifetime = 160 / 24;
+    assert.equal(sev(lifetime, 5), "ok");
+    assert.equal(sev(lifetime, 2), "ok");
+    assert.equal(sev(lifetime, 1), "warn");
+    expectFinding(cert(lifetime, 0), { severity: "crit", title: "Certificate expires today" });
+  });
+
+  test("long-lived or unknown lifetime keeps the 30/14 day thresholds", () => {
+    assert.equal(sev(397, 29), "warn");
+    assert.equal(sev(397, 13), "crit");
+    assert.equal(sev(397, 30), "ok");
+    const unknown = (daysLeft) => one("certificate", snap({ tls: { ...TLS_OK, daysLeft } })).severity;
+    assert.equal(unknown(29), "warn");
+    assert.equal(unknown(13), "crit");
+    const garbage = one("certificate", snap({ tls: { ...TLS_OK, validFrom: "nope", daysLeft: 29 } }));
+    assert.equal(garbage.severity, "warn");
+    const reversed = one("certificate", snap({ tls: { ...TLS_OK, validFrom: "2030-01-01T00:00:00.000Z", daysLeft: 29 } }));
+    assert.equal(reversed.severity, "warn");
+  });
+});
+
+describe("detection audit: csp", () => {
+  const csp = (value) => one("csp", snap({ headers: { "content-security-policy": value } }));
+
+  test("a nonce or hash does not neutralise wide sources; only 'strict-dynamic' does", () => {
+    for (const policy of ["script-src https: 'nonce-abc'", "script-src * 'sha256-xyz='", "default-src 'self' https: 'nonce-a'"]) {
+      expectFinding(csp(policy), { severity: "warn", title: "CSP doesn't restrict scripts" });
+    }
+    assert.equal(csp("script-src 'nonce-abc' 'strict-dynamic' https: 'unsafe-inline'").severity, "ok");
+  });
+
+  test("a wide policy that also allows inline scripts is reported as not restricting scripts", () => {
+    expectFinding(csp("script-src * 'unsafe-inline'"), { severity: "warn", title: "CSP doesn't restrict scripts" });
+  });
+
+  test("not restricting scripts weighs the same as no policy", () => {
+    const none = analyze(snap()).score;
+    const useless = analyze(snap({ headers: { "content-security-policy": "upgrade-insecure-requests" } })).score;
+    assert.equal(useless, none);
+  });
+});
+
+describe("detection audit: referrer-policy uses the last recognised token", () => {
+  const rp = (value) => one("referrer-policy", snap({ headers: { "referrer-policy": value } }));
+
+  test("fallback lists", () => {
+    assert.equal(rp("no-referrer-when-downgrade, strict-origin-when-cross-origin").severity, "ok");
+    assert.equal(rp("unsafe-url,no-referrer").severity, "ok");
+    assert.equal(rp("strict-origin-when-cross-origin, unsafe-url").severity, "warn");
+    assert.equal(rp("unsafe-url, some-future-policy").severity, "warn", "unknown tokens are skipped");
+  });
+});
+
+describe("detection audit: cookies", () => {
+  const cookies = (setCookies, extra = {}) => snap({ setCookies, ...extra });
+
+  test("deletion cookies are ignored (Max-Age <= 0, or Expires before the scan)", () => {
+    const deletions = [
+      "PHPSESSID=deleted; expires=Thu, 01-Jan-1970 00:00:01 GMT; Max-Age=0; path=/",
+      "wordpress_logged_in_abc=+; Max-Age=-1; path=/",
+      "sid=; expires=Wed, 21 Oct 2026 15:20:00 GMT; path=/",
+    ];
+    for (const raw of deletions) {
+      const s = cookies([raw]);
+      expectFinding(one("cookie-secure", s), { id: "cookies", title: "No cookies on first visit" });
+      expectNull("cookie-httponly", s);
+      expectNull("cookie-samesite", s);
+    }
+    const mixed = cookies([deletions[0], "theme=dark; Secure; HttpOnly; SameSite=Lax"]);
+    assert.equal(one("cookie-secure", mixed).evidence, "1 cookie, all Secure");
+  });
+
+  test("live cookies are kept: future Expires, or a positive Max-Age that overrides a past Expires", () => {
+    for (const raw of [
+      "sid=1; expires=Fri, 23 Oct 2026 15:20:00 GMT",
+      "sid=1; Max-Age=3600; expires=Thu, 01-Jan-1970 00:00:01 GMT",
+      "sid=1; Max-Age=soon",
+      "sid=1; expires=not a date",
+    ]) {
+      assert.equal(one("cookie-httponly", cookies([raw])).severity, "warn", raw);
+    }
+  });
+
+  test("without scannedAt, Expires is compared with the current time", () => {
+    assert.equal(one("cookie-secure", cookies(["sid=1; expires=Thu, 01-Jan-1970 00:00:01 GMT"], { scannedAt: undefined })).id, "cookies");
+    assert.equal(one("cookie-secure", cookies(["sid=1; expires=Fri, 01 Jan 2100 00:00:00 GMT"], { scannedAt: undefined })).id, "cookie-secure");
+  });
+
+  test("'sid' counts only as its own word", () => {
+    const ho = (name) => one("cookie-httponly", cookies([`${name}=1`])).severity;
+    for (const name of ["sid", "SID", "_sid", "connect.sid", "app-sid", "sid2", "PHPSESSID"]) assert.equal(ho(name), "warn", name);
+    for (const name of ["sidebar_state", "visid_incap_123", "consider_me"]) assert.equal(ho(name), "info", name);
+  });
+
+  test("cookie fixes give one nginx line naming the cookie, plus trust proxy for Express", () => {
+    const s = cookies(["PHPSESSID=abc; path=/"]);
+    const line = "`proxy_cookie_flags PHPSESSID secure httponly samesite=lax;`";
+    const secure = one("cookie-secure", s);
+    const httpOnly = one("cookie-httponly", s);
+    const sameSite = one("cookie-samesite", s);
+    for (const f of [secure, httpOnly, sameSite]) {
+      assert.ok(f.fix.includes(line), `${f.id}: ${f.fix}`);
+      assert.match(f.fix, /only the first line that matches/);
+      assert.doesNotMatch(f.fix, /proxy_cookie_flags ~/);
+      checkFinding(f);
+    }
+    assert.ok(secure.fix.includes("`app.set('trust proxy', 1)`"));
+    const odd = one("cookie-secure", cookies(["we`ird=1"]));
+    assert.ok(odd.fix.includes("`proxy_cookie_flags <cookie> secure httponly samesite=lax;`"), odd.fix);
+  });
+});
+
+describe("detection audit: internal host names", () => {
+  test("EC2 host names from any private range are internal", () => {
+    const dbg = (value) => one("debug-headers", snap({ headers: { "x-backend-server": value } })).severity;
+    for (const value of ["ip-172-31-23-45", "ip-192-168-1-5", "ip-10-0-3-17"]) assert.equal(dbg(value), "warn", value);
+    for (const value of ["ip-172-32-1-1", "skip-10-1"]) assert.equal(dbg(value), "ok", value);
+  });
+});
+
+describe("detection audit: a well-configured Vercel site", () => {
+  test("platform banner, public CORS and hosting are not counted twice", () => {
+    const report = analyze(
+      snap({
+        headers: {
+          server: "Vercel",
+          "x-vercel-id": "fra1::iad1::abcd-1729600000000-0123456789ab",
+          "x-vercel-cache": "HIT",
+          "access-control-allow-origin": "*",
+          "strict-transport-security": "max-age=63072000; includeSubDomains; preload",
+          "content-security-policy": "default-src 'self'; script-src 'self'; frame-ancestors 'none'; object-src 'none'",
+          "x-frame-options": "DENY",
+          "x-content-type-options": "nosniff",
+          "referrer-policy": "strict-origin-when-cross-origin",
+          "permissions-policy": "camera=(), microphone=(), geolocation=()",
+        },
+        httpProbe: { result: "redirects-to-https", status: 308, location: "https://example.com/" },
+      })
+    );
+    checkReport(report);
+    assert.equal(report.score, 1);
+    assert.deepEqual(report.findings.filter((f) => f.severity !== "ok").map((f) => `${f.severity} ${f.id}`), ["info hosting"]);
+    const byId = Object.fromEntries(report.findings.map((f) => [f.id, f]));
+    assert.equal(byId["server-header"].title, "Hosting platform named");
+    assert.equal(byId.cors.title, "Public CORS, no logins");
+    assert.ok(byId.hosting.evidence.startsWith("X-Vercel-Id: fra1::"));
   });
 });

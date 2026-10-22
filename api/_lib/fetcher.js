@@ -149,10 +149,12 @@ function buildTls(raw, certError, now = Date.now()) {
   if (!raw) return null;
   const ms = raw.validTo ? Date.parse(raw.validTo) : NaN;
   const ok = Number.isFinite(ms);
+  const fromMs = raw.validFrom ? Date.parse(raw.validFrom) : NaN;
   const error = certError || (raw.authorized === false ? raw.authorizationError || 'UNKNOWN_CERT_ERROR' : null);
   return {
     valid: !error,
     error: error ? String(error) : null,
+    validFrom: Number.isFinite(fromMs) ? new Date(fromMs).toISOString() : null,
     validTo: ok ? new Date(ms).toISOString() : null,
     daysLeft: ok ? Math.floor((ms - now) / DAY_MS) : null,
     issuer: firstName(raw.issuer?.O) ?? firstName(raw.issuer?.CN) ?? null,
@@ -299,6 +301,7 @@ function requestOnce(url, ctx, { rejectUnauthorized = true, timeoutMs = ctx.hopT
           cert = {};
         }
         tlsRaw = {
+          validFrom: cert.valid_from || null,
           validTo: cert.valid_to || null,
           issuer: cert.issuer || null,
           protocol: typeof sock.getProtocol === 'function' ? sock.getProtocol() : null,
@@ -445,6 +448,11 @@ export async function fetchSnapshot(url, input, opts = {}) {
     probePort: allowPrivate() ? (opts.probePort ?? 80) : 80, // test hook, local only
   };
   const startUrl = validateUrl(url);
+  // HTTPS first, even when the input says http://: a site that serves both
+  // must not be reported as having no HTTPS. runChainWithFallback still falls
+  // back to plain HTTP on a connection failure, and the probe below checks
+  // what plain HTTP does.
+  if (startUrl.protocol === 'http:') startUrl.protocol = 'https:';
   const started = Date.now();
   const controller = new AbortController();
   const ctx = {

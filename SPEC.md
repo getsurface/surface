@@ -1,4 +1,4 @@
-# Surface — build spec (single source of truth)
+# Surface — specification
 
 Surface is a free, passive website exposure checker. A visitor pastes a URL; the
 backend makes a few ordinary requests to that site, reads what the server sends
@@ -9,29 +9,28 @@ Runtime: Node 22, ESM (`"type": "module"`), **zero npm dependencies** (Node
 built-ins only). Deploy target: Vercel (static `index.html` + `assets/` and one
 serverless function `api/scan.js`). Local dev: `node server.js`.
 
-## Layout and file ownership
+## Layout
 
 ```
 surface/
-  index.html            C  full HTML document (doctype, head, body)
-  assets/app.css        C  all styles (no inline <style>)
-  assets/app.js         C  all client logic (no inline <script>)
-  api/scan.js           B  Vercel handler (also reused by server.js)
-  api/_lib/guard.js     B  input normalization + SSRF protection
-  api/_lib/fetcher.js   B  safe HTTP(S) client -> Snapshot
-  api/_lib/scan-core.js B  runScan(): rate limit -> guard -> fetch -> analyze
-  api/_lib/errors.js    B  ScanError class + code->HTTP status map
-  api/_lib/rules.js     A  rule catalog
-  api/_lib/analyze.js   A  analyze(snapshot) -> Report
-  server.js             B  zero-dep local dev server
-  test/analyze.test.js  A  node:test, uses test/fixtures/*.json
-  test/guard.test.js    B  node:test
-  test/fixtures/        A  snapshot fixtures
-  package.json, vercel.json, README.md, SPEC.md   integrator (do not edit)
+  index.html, 404.html     static pages (no inline <script> or <style>)
+  assets/app.css           all styles, @font-face for the self-hosted fonts
+  assets/app.js            all client logic
+  assets/fonts/            Inter and Geist Mono (SIL OFL 1.1)
+  robots.txt, .well-known/security.txt
+  api/scan.js              Vercel handler (also reused by server.js)
+  api/_lib/guard.js        input normalization + SSRF protection
+  api/_lib/fetcher.js      safe HTTP(S) client -> Snapshot
+  api/_lib/scan-core.js    runScan(): rate limit -> guard -> fetch -> analyze
+  api/_lib/errors.js       ScanError class + code->HTTP status map
+  api/_lib/rules.js        rule catalog
+  api/_lib/analyze.js      analyze(snapshot) -> Report
+  server.js                zero-dependency local dev server (same headers as production)
+  test/                    node:test suites and snapshot fixtures
 ```
 
-Only edit files you own. `api/_lib/` is excluded from Vercel routing because of
-the underscore. Tests run with `node --test` from the project root.
+`api/_lib/` is excluded from Vercel routing because of the underscore. Tests run
+with `node --test` from the project root.
 
 ---
 
@@ -40,7 +39,8 @@ the underscore. Tests run with `node --test` from the project root.
 ```js
 {
   input: "example.com",                 // raw user input, trimmed
-  requestedUrl: "https://example.com/", // normalized URL actually requested first
+  requestedUrl: "https://example.com/", // normalized URL actually requested first (always https:,
+                                        // even for http:// input; see "HTTPS first")
   finalUrl: "https://www.example.com/", // URL after redirects
   status: 200,                          // final HTTP status
   redirects: [ { from: "https://example.com/", to: "https://www.example.com/", status: 301 } ],
@@ -57,6 +57,7 @@ the underscore. Tests run with `node --test` from the project root.
   tls: {
     valid: true,                 // false when the certificate failed verification
     error: null,                 // e.g. "CERT_HAS_EXPIRED", "DEPTH_ZERO_SELF_SIGNED_CERT", "ERR_TLS_CERT_ALTNAME_INVALID"
+    validFrom: "2026-10-16T00:00:00.000Z" | null,  // certificate notBefore
     validTo: "2027-01-14T23:59:59.000Z" | null,
     daysLeft: 84 | null,         // Math.floor((validTo - now) / 86400000)
     issuer: "Let's Encrypt" | null,  // issuer O, else CN
@@ -108,7 +109,7 @@ Finding:
 `counts.total = findings.length`. A rule that is not applicable returns `null`
 and produces no finding.
 
-### Rule catalog (Agent A implements exactly these, in this order)
+### Rule catalog (in this order)
 
 Evidence `—` means "header absent". Header lookups are case-insensitive (names
 are already lowercased in the snapshot); compare values case-insensitively.
@@ -116,17 +117,21 @@ are already lowercased in the snapshot); compare values case-insensitively.
 
 **versions**
 1. `server-header` — `server`. Absent → ok "Server software hidden". A hosting
-   or CDN banner (cloudflare, vercel, netlify, gws, awselb/2.0, …) → info
-   "Server software named", even with a build number. Has a version → crit
-   "Server version exposed". Otherwise → info "Server software named".
-   Fix mentions nginx `server_tokens off;`, Apache `ServerTokens Prod` + `ServerSignature Off`.
+   or CDN banner (cloudflare, vercel, netlify, gws, awselb/2.0, Fly/…, …) → ok
+   "Hosting platform named" (desc: only the platform's name is visible), even with
+   a build number. Has a version → warn "Server version exposed". Otherwise → info
+   "Server software named". Fix mentions nginx `server_tokens off;`, Apache
+   `ServerTokens Prod` + `ServerSignature Off`, and IIS `removeServerHeader` only
+   for Windows Server 2019+ (older IIS: URL Rewrite outbound rule on `RESPONSE_SERVER`).
 2. `powered-by` — `x-powered-by`. Absent → ok "No framework banner". Has a
-   version → crit "Backend version leaked". Otherwise → warn "Backend framework named".
+   version → warn "Backend version leaked". Otherwise → info "Backend framework named".
    Fix mentions PHP `expose_php = Off`, Express `app.disable('x-powered-by')`,
    Next.js `poweredByHeader: false`.
+   Version disclosure is warn, not crit: version strings are often distro builds
+   with backported fixes, and crit is kept for states that are exploitable as-is.
 3. `fingerprints` — one finding per header present:
-   `x-aspnet-version`, `x-aspnetmvc-version` → crit (always versioned);
-   `x-generator` → crit if has a version else warn;
+   `x-aspnet-version`, `x-aspnetmvc-version` → warn (always versioned);
+   `x-generator` → warn if has a version else info;
    `x-drupal-cache` / `x-drupal-dynamic-cache` → info "Drupal detected";
    `x-runtime` → info "Ruby runtime header";
    `link` containing `api.w.org` → info "WordPress detected".
@@ -137,15 +142,25 @@ are already lowercased in the snapshot); compare values case-insensitively.
    else crit "No HTTPS" (evidence the final URL).
 5. `http-redirect` — `httpProbe` null or `result: "error"` → null.
    `redirects-to-https` → ok "HTTP redirects to HTTPS" (evidence `${status} → https`);
-   `serves-http` → warn "Plain HTTP still works" (evidence `HTTP ${status}`);
+   `serves-http` with a 3xx status and an `http://` `location` → info "HTTP redirect
+   doesn't go straight to HTTPS" (evidence `${status} → ${location}`); `serves-http`
+   with status ≥ 400 → info "Plain HTTP answers with an error" (evidence `HTTP ${status}`);
+   any other `serves-http` → warn "Plain HTTP still works" (evidence `HTTP ${status}`);
    `no-http` → ok "Plain HTTP is closed" (evidence `port 80 closed`).
 6. `hsts` — only when final URL is https (else null). `strict-transport-security`
-   absent → warn "HSTS not enabled"; `max-age` < 15552000 (180 days) → warn
+   absent → warn "HSTS not enabled"; no valid `max-age` (missing, signed, decimal) →
+   warn "HSTS max-age missing"; `max-age` < 15552000 (180 days) → warn
    "HSTS max-age too short"; else ok "HSTS enabled" (evidence `max-age=N` plus `; includeSubDomains` if set).
-7. `certificate` — `tls` null → null. `valid === false` → crit "Certificate not trusted"
-   (evidence the error code). `daysLeft < 0` → crit "Certificate expired";
-   `< 14` → crit "Certificate expires in N days"; `< 30` → warn "Certificate expires soon";
-   else ok "Certificate valid" (evidence `${daysLeft} days left · ${issuer}`).
+   The ok fix never asks to add `preload` when it is already present, and mentions the
+   preload list's `includeSubDomains` + `max-age` ≥ 31536000 requirement.
+7. `certificate` — `tls` null → null. `valid === false` with `CERT_HAS_EXPIRED` → crit
+   "Certificate expired" (evidence `expired N days ago · ${issuer}` when `daysLeft < 0`,
+   else the code); other `valid === false` → crit "Certificate not trusted" (evidence the
+   error code). `daysLeft < 0` → crit "Certificate expired". With lifetime =
+   `validTo − validFrom` in days: `daysLeft < min(14, lifetime/10)` → crit "Certificate
+   expires in N days"; `< min(30, lifetime/4)` → warn "Certificate expires soon"; when the
+   lifetime is unknown the thresholds are 14 and 30. Else ok "Certificate valid"
+   (evidence `${daysLeft} days left · ${issuer}`).
 
 **headers**
 8. `csp` — `content-security-policy` absent: if `content-security-policy-report-only`
@@ -153,8 +168,9 @@ are already lowercased in the snapshot); compare values case-insensitively.
    Present: effective script directive = `script-src`, else `default-src`. If it
    contains `'unsafe-inline'` and no `'nonce-` / `'sha256-` / `'sha384-` / `'sha512-`
    / `'strict-dynamic'` → info "CSP allows inline scripts". If no policy restricts
-   scripts (no `script-src`/`default-src`, or only `*` / bare schemes like `https:`
-   without a nonce/hash) → info "CSP doesn't restrict scripts". Else ok "Content security policy set".
+   scripts (no `script-src`/`default-src`, or `*` / bare schemes like `https:` without
+   `'strict-dynamic'`; a nonce or hash alone does not cancel them) → warn "CSP doesn't
+   restrict scripts", checked before the inline rule. Else ok "Content security policy set".
 9. `clickjacking` — CSP `frame-ancestors` wins when present (browsers ignore
    X-Frame-Options then): `*` or a bare scheme → warn "Clickjacking protection missing";
    anything else → ok. Without it, `x-frame-options` `DENY`/`SAMEORIGIN` → ok
@@ -163,14 +179,21 @@ are already lowercased in the snapshot); compare values case-insensitively.
 10. `nosniff` — `x-content-type-options` equals `nosniff` → ok "MIME sniffing blocked";
     else warn "MIME sniffing not blocked".
 11. `referrer-policy` — absent → info "No referrer policy" (browsers default to a
-    safe value, say so). Contains `unsafe-url` or `no-referrer-when-downgrade` → warn
-    "Referrer policy leaks full URLs". Else ok "Referrer policy set".
+    safe value, say so). The effective policy is the last recognised token of the
+    comma-separated list (browsers treat it as a fallback chain). Effective `unsafe-url`
+    or `no-referrer-when-downgrade` → warn "Referrer policy leaks full URLs". Else ok
+    "Referrer policy set".
 12. `permissions-policy` — present → ok "Permissions policy set"; absent → info "No permissions policy".
 
 **cookies** — parse each Set-Cookie: name = text before the first `=`, attributes
 are the `;`-separated parts after the first part, matched case-insensitively.
-"Sensitive" name = `/sess|sid|auth|token|jwt|login|logged|remember|csrf/i`, except
-`XSRF-TOKEN` and `csrftoken`, which front-end code is designed to read.
+Deletion cookies are ignored: a valid `Max-Age` ≤ 0, or (without a valid `Max-Age`)
+an `Expires` date before `scannedAt` (before the current time if `scannedAt` is missing).
+"Sensitive" name = `/sess|(?:^|[^a-z])sid(?![a-z])|auth|token|jwt|login|logged|remember|csrf/i`
+("sid" only as its own word), except `XSRF-TOKEN` and `csrftoken`, which front-end code
+is designed to read. nginx fixes suggest one `proxy_cookie_flags <name> secure httponly
+samesite=lax;` line naming the cookie (nginx applies only the first matching line); the
+Express Secure fix mentions `app.set('trust proxy', 1)`.
 13. `cookie-secure` — no cookies → one ok `cookies` "No cookies on first visit"
     (evidence `Set-Cookie: —`). On an https site, any cookie without `Secure` → warn
     "Cookies sent without Secure" (evidence `name (+N more)`). Else ok "Cookies marked Secure".
@@ -184,24 +207,30 @@ are the `;`-separated parts after the first part, matched case-insensitively.
 
 **cors**
 16. `cors` — `access-control-allow-origin`: `*` together with
-    `access-control-allow-credentials: true` → crit "CORS open with credentials";
-    `*` → info "Open to any origin" (fine for public assets, say so);
-    `null` with credentials → crit "CORS trusts the null origin"; `null` → warn "CORS allows the null origin";
-    another value → ok "CORS restricted"; absent → ok "No cross-origin access" (evidence `ACAO: —`).
+    `access-control-allow-credentials: true` → info "CORS credentials flag ignored"
+    (browsers refuse credentialed requests when the origin is `*`);
+    `*` → ok "Public CORS, no logins" (browsers never send cookies with `*`, so only
+    already-public content is readable; fine for public pages, say so);
+    `null` with credentials → crit "CORS trusts the null origin"; `null` → info "CORS allows the null origin";
+    another value → ok "CORS restricted"; absent → ok "No cross-origin access" (evidence `ACAO: —`;
+    desc says it describes a normal request, since no `Origin` header is sent).
 
 **disclosure**
-17. `hosting` — first match wins → info "Hosting provider identified" (evidence `via: <name>`):
-    `cf-ray` or server contains cloudflare → Cloudflare; `x-vercel-id` → Vercel;
-    `x-nf-request-id` → Netlify; `x-amz-cf-id` → Amazon CloudFront; `x-fastly-request-id`
-    or `x-served-by` containing `cache-` → Fastly; `x-github-request-id` → GitHub Pages;
-    `x-azure-ref` → Azure Front Door; `fly-request-id` → Fly.io; `x-render-origin-server` → Render;
-    server contains `akamaighost` → Akamai; server equals `google frontend` or `gws` → Google.
-    No match → null.
+17. `hosting` — first match wins → info "Hosting provider identified" (evidence: the
+    header that matched, as `Header: value`; the provider is named in desc and fix).
+    Hosting platforms first, since many run behind a CDN: `x-vercel-id` → Vercel;
+    `x-nf-request-id` → Netlify; `x-github-request-id` → GitHub Pages;
+    `x-render-origin-server` → Render; `fly-request-id` → Fly.io; `x-shopid` → Shopify.
+    Then CDNs: `cf-ray` or server contains cloudflare → Cloudflare; `x-amz-cf-id` →
+    Amazon CloudFront; `x-fastly-request-id` or `x-served-by` containing `cache-` → Fastly;
+    `x-azure-ref` → Azure Front Door; server contains `akamaighost` → Akamai; server
+    equals `google frontend` or `gws` → Google. No match → null.
 18. `debug-headers` — `x-debug-token` or `x-debug-token-link` → crit "Debug profiler exposed".
     Any of `x-backend-server`, `x-server-name`, `x-upstream`, `x-real-server`,
     `x-forwarded-server`, `x-host`, `x-served-by` whose value contains a private IPv4
     (`10.`, `172.16-31.`, `192.168.`, `127.`), or `.internal`, `.local`, `.lan`,
-    `localhost`, or `ip-10-` → warn "Internal host name leaked" (evidence `header: value`).
+    `localhost`, or an EC2-style name in a private range (`ip-10-`, `ip-172-16-` … `ip-172-31-`,
+    `ip-192-168-`) → warn "Internal host name leaked" (evidence `header: value`).
     Both present → both findings, ids `debug-headers:token` and `debug-headers:internal`.
     Neither → ok "No debug headers".
 19. `status` — final status ≥ 500 → warn "Server returned an error"; 400–499 → info
@@ -213,7 +242,8 @@ Exports from `api/_lib/analyze.js`:
 `analyze(snapshot) -> Report`, `scoreFindings(findings) -> { score, level, counts }`.
 Exports from `api/_lib/rules.js`: `RULES` (array of `{ id, category, run(snapshot) }`,
 where `run` returns `Finding | Finding[] | null`). Both modules are pure: no I/O,
-no `Date.now()` except none needed (time comes from the snapshot).
+and time comes from the snapshot (`scannedAt`); the one exception is a cookie
+`Expires` check on a snapshot without `scannedAt`, which falls back to the clock.
 
 ---
 
@@ -247,7 +277,7 @@ stack traces. The handler reads the query from `req.url`
 `res.statusCode`, `res.setHeader`, `res.end` so it runs unchanged on Vercel and
 on plain `node:http`.
 
-## Security requirements (Agent B)
+## Security requirements
 
 - Normalize: trim, max 2048 chars, prepend `https://` when no scheme, only
   `http:`/`https:`, reject userinfo, port must be empty/80/443, drop query and
@@ -263,24 +293,32 @@ on plain `node:http`.
   IPv4-mapped (`::ffff:a.b.c.d`) / NAT64 (`64:ff9b::a.b.c.d`) forms checked against
   the IPv4 list. IP-literal hosts go through the same check.
 - Every redirect hop is re-validated with the same rules (scheme, port, host,
-  IP). Max 5 redirects, loop detection.
+  IP) and its query and hash are dropped, so a redirect can't make Surface relay
+  chosen requests to other sites. Max 5 redirects, loop detection. A `101`
+  response ends the hop as `unreachable`.
+- No HTTPS -> HTTP fallback when the timeout hit before DNS resolved.
 - DNS goes through c-ares (`dns.Resolver`, 2.5 s × 2 tries), not getaddrinfo,
   so unresponsive nameservers can't tie up libuv's thread pool.
 - Never read response bodies: capture status, headers, certificate, then
   `res.destroy()`. Header block ≤ 16 KB, each value capped at 8 KB, and every rule
   regex is linear-time on hostile input.
 - Timeouts: 8 s per hop, 5 s for the HTTP probe, whole scan budget ≤ 15 s.
-- HTTPS first; on connection failure (ECONNREFUSED, ECONNRESET, timeout, TLS
+- HTTPS first, also when the input says `http://` (the plain-HTTP probe reports what
+  port 80 does); on connection failure (ECONNREFUSED, ECONNRESET, timeout, TLS
   protocol error) fall back to `http://` same host/path. On certificate
   verification errors, retry once with `rejectUnauthorized: false` and record
   `tls.valid = false` + the error code.
 - User-Agent: `SurfaceCheck/1.0 (+passive header check)`; `Accept-Encoding: identity`.
-- In-memory rate limit: 8 scans / 60 s per client IP (best effort on serverless).
-  Client IP = first entry of `x-forwarded-for`, else `x-real-ip`, else socket address.
+- In-memory rate limit: 8 scans / 60 s per client IP (best effort on serverless;
+  production adds a Vercel Firewall rule on `/api/scan`). Client IP: on Vercel
+  `x-vercel-forwarded-for`, else the first `x-forwarded-for` entry, else
+  `x-real-ip`; with `TRUST_PROXY=1` the first `x-forwarded-for` entry, else
+  `x-real-ip`; otherwise the socket address. Values that aren't a plain IP are
+  ignored. IPv6 clients share a bucket per /64.
 - `SURFACE_ALLOW_PRIVATE=1` env disables the IP/hostname blocklist **for local
   testing only** (port policy too). Default off, and ignored whenever `VERCEL` is set.
 
-## Frontend requirements (Agent C)
+## Frontend requirements
 
 - Keep the current design exactly: Apple palette tokens (light + dark), SF/system
   type, Geist Mono for numbers and evidence, nav, hero pills with icons, Exposure
