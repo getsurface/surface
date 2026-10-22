@@ -1,78 +1,80 @@
 # Surface
 
-Бесплатная проверка сайта: вставляешь адрес — видишь то, что сервер выдаёт любому постороннему (версии софта, защитные заголовки, cookie, сертификат), и как это закрыть.
+**Live:** https://surface-theta.vercel.app
 
-Проверка пассивная: несколько обычных запросов (страница по HTTPS, проверка plain HTTP, рукопожатие сертификата). Ничего не ломает, не нагружает, не логинится, тело страницы даже не читает.
+A free website exposure checker. Paste a URL and see what the server reveals to any stranger (software versions, security headers, cookies, certificate), plus how to close each gap.
 
-## Запуск локально
+The check is passive: a few ordinary requests (the page over HTTPS, a plain-HTTP check and the certificate handshake). It never probes, stresses or logs in, and it doesn't even read the page body.
 
-Нужен Node.js 20+ (зависимостей нет, `npm install` не нужен).
+## Run locally
+
+Requires Node.js 20+. There are no dependencies, so no `npm install`.
 
 ```bash
 npm run dev        # http://localhost:3000
-npm test           # 214 тестов
+npm test           # 214 tests
 ```
 
-Локально сканируются только публичные сайты — внутренние адреса заблокированы так же, как в проде.
-Для тестов против своего локального сервера есть флаг `SURFACE_ALLOW_PRIVATE=1`.
-**Никогда не включай его в проде** — он снимает защиту от сканирования внутренних сетей.
+Locally, only public sites can be scanned; internal addresses are blocked exactly as in production.
+To test against your own local server there is a `SURFACE_ALLOW_PRIVATE=1` flag.
+**Never enable it in production.** It turns off the protection against scanning internal networks.
 
-## Деплой на Vercel
+## Deploy to Vercel
 
-**Вариант 1 — через GitHub (проще):**
-1. Залей папку в новый репозиторий на GitHub.
-2. На vercel.com → Add New → Project → импортируй репозиторий.
-3. Framework Preset: **Other**. Build Command и Output Directory оставь пустыми.
-4. Deploy. Через минуту сайт живой.
+**Option 1: from GitHub (simplest)**
+1. Push the folder to a GitHub repository.
+2. On vercel.com: Add New → Project → import the repository.
+3. Framework Preset: **Other**. Leave Build Command and Output Directory empty.
+4. Deploy. The site is live in about a minute.
 
-**Вариант 2 — из терминала:**
+**Option 2: from the terminal**
 ```bash
 npm i -g vercel
-vercel          # превью
-vercel --prod   # прод
+vercel          # preview
+vercel --prod   # production
 ```
 
-Свой домен: Project → Settings → Domains.
+Custom domain: Project → Settings → Domains.
 
-### Обязательно перед запуском
-- **Лимит запросов на уровне Vercel.** Встроенный лимит (8 проверок в минуту с одного IP) живёт в памяти одного инстанса — при росте трафика инстансов становится больше, и лимит размывается. Добавь правило: Project → Firewall → Rate Limiting → путь `/api/scan`, например 10 запросов в минуту на IP.
-- **Проверь сам себя.** Вставь адрес своего задеплоенного сайта — он должен получить почти чистый отчёт: `vercel.json` выставляет все нужные защитные заголовки.
+### Before launch
+- **Rate limit at the Vercel level.** The built-in limit (8 scans per minute per IP) lives in one instance's memory, so it weakens as traffic spreads across instances. Add a rule: Project → Firewall → Rate Limiting → path `/api/scan`, for example 10 requests per minute per IP.
+- **Scan yourself.** Paste your deployed site's address. It should get a near-clean report, because `vercel.json` sets all the security headers it needs.
 
-## Как устроено
+## How it works
 
 ```
-index.html, assets/      фронтенд (дизайн, отчёт, фильтры, «как починить»)
-api/scan.js              серверная функция: GET /api/scan?url=...
-api/_lib/guard.js        проверка адреса и защита от SSRF
-api/_lib/fetcher.js      безопасные запросы к сайту → снимок ответа
-api/_lib/rules.js        19 правил проверки с текстами «что это» и «как починить»
-api/_lib/analyze.js      снимок → отчёт, оценка 0–100
-api/_lib/scan-core.js    лимит запросов → проверка → запросы → анализ
-server.js                локальный сервер для разработки (на Vercel не деплоится)
-SPEC.md                  полная спецификация: форматы, правила, коды ошибок
+index.html, assets/      frontend (design, report, filters, "How to fix")
+api/scan.js              serverless function: GET /api/scan?url=...
+api/_lib/guard.js        address validation and SSRF protection
+api/_lib/fetcher.js      safe requests to the target site → response snapshot
+api/_lib/rules.js        19 rules, each with "what it means" and "how to fix"
+api/_lib/analyze.js      snapshot → report, score 0–100
+api/_lib/scan-core.js    rate limit → validation → requests → analysis
+server.js                local dev server (not deployed to Vercel)
+SPEC.md                  full spec: data formats, rules, error codes
 ```
 
-### Что проверяется
-| Группа | Проверки |
+### What it checks
+| Group | Checks |
 |---|---|
-| Версии | баннер сервера, X-Powered-By, отпечатки CMS (WordPress, Drupal, ASP.NET, генераторы) |
-| Шифрование | HTTPS, редирект с HTTP, HSTS, срок и доверие сертификата |
-| Заголовки | CSP, защита от кликджекинга, nosniff, Referrer-Policy, Permissions-Policy |
-| Cookie | Secure, HttpOnly для сессий, SameSite |
-| CORS | открытый доступ, особенно с credentials |
-| Утечки | debug-профайлер, внутренние имена серверов, хостинг/CDN, ошибки сервера |
+| Versions | server banner, X-Powered-By, CMS fingerprints (WordPress, Drupal, ASP.NET, generators) |
+| Transport | HTTPS, HTTP→HTTPS redirect, HSTS, certificate expiry and trust |
+| Headers | CSP, clickjacking protection, nosniff, Referrer-Policy, Permissions-Policy |
+| Cookies | Secure, HttpOnly on session cookies, SameSite |
+| CORS | open access, especially with credentials |
+| Disclosure | debug profiler, internal host names, hosting/CDN, server errors |
 
-Оценка: `20 × срочно + 8 × починить + 1 × инфо`, максимум 100. До 25 — Low, до 55 — Moderate, выше — High.
+Score: `20 × urgent + 8 × to fix + 1 × info`, capped at 100. Under 25 is Low, under 55 is Moderate, above that is High.
 
-### Защита сервиса
-- Блок локальных, приватных, служебных и облачных адресов (IPv4 и IPv6, включая хитрые записи вроде `2130706433` и `0x7f.1`).
-- DNS проверяется прямо в момент подключения — подмена адреса между проверкой и запросом (DNS rebinding) не проходит.
-- Каждый редирект проверяется заново, максимум 5.
-- Только порты 80 и 443, тело ответа не читается, таймауты на каждый шаг.
-- Данные из чужих заголовков выводятся только как текст — подсунуть скрипт через заголовок нельзя.
-- Сканы запускаются только с нашей страницы (заголовок `X-Surface` + проверка `Sec-Fetch-Site`) — чужой сайт не может гонять проверки через браузеры посетителей.
-- Огромные и хитрые заголовки режутся и разбираются за миллисекунды; DNS с жёстким таймаутом — «немой» домен не подвесит функцию.
-- Флаг `SURFACE_ALLOW_PRIVATE` игнорируется на Vercel, даже если его случайно выставить.
-- Отчёты не хранятся.
+### How the service protects itself
+- Blocks local, private, reserved and cloud-metadata addresses (IPv4 and IPv6, including tricky forms like `2130706433` and `0x7f.1`).
+- DNS is validated at connect time, so swapping the address between check and request (DNS rebinding) doesn't work.
+- Every redirect is re-validated, up to 5.
+- Only ports 80 and 443, response bodies are never read, timeouts on every step.
+- Values from third-party headers are rendered as text only, so a header can't inject a script.
+- Scans can only be started from our own page (`X-Surface` header plus a `Sec-Fetch-Site` check), so other sites can't run scans through their visitors' browsers.
+- Huge or crafted headers are capped and parsed in milliseconds; DNS has a hard timeout, so a silent domain can't hang the function.
+- The `SURFACE_ALLOW_PRIVATE` flag is ignored on Vercel, even if set by mistake.
+- Reports are not stored.
 
-API закрыт для чужих: прямой `curl` без заголовка `X-Surface: 1` получит 403. Это нормально.
+The API is closed to outside callers: a direct `curl` without the `X-Surface: 1` header gets a 403. That's expected.
